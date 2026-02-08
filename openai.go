@@ -4,7 +4,7 @@ type ChatCompleteionRequest struct {
 	Model       string    `json:"model"`
 	Messages    []Message `json:"messages"`
 	Temperature int       `json:"temperature"`
-	MaxTokens   int       `json:"max_tokens"`
+	MaxTokens   int       `json:"max_tokens,omitempty"`
 	Stream      bool      `json:"stream,omitempty"`
 }
 

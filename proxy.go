@@ -39,11 +39,12 @@ func BindJSON(r *http.Request, obj interface{}) error {
 	defer r.Body.Close()
 
 	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
+	// 暂时禁用此选项以便更宽松地解析
+	// decoder.DisallowUnknownFields()
 
 	err := decoder.Decode(obj)
 	if err != nil {
-		return err
+		return fmt.Errorf("json decode error: %w", err)
 	}
 
 	return nil
