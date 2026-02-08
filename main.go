@@ -1,127 +1,87 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"strings"
-	"time"
 )
 
-type apiResponse struct {
-	Id      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []any  `json:"choices"`
-	Usage   any    `json:"usage"`
-}
+const serverPort = 8080
 
-type sseResponse struct {
-	Id      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []any  `json:"choices"`
-}
-
-type choiceItem struct {
-	Index        int    `json:"index"`
-	Message      any    `json:"message"`
-	FinishReason string `json:"finish_reason"`
-}
-
-type sseChoiceItem struct {
-	Index        int               `json:"index"`
-	Delta        map[string]string `json:"delta"`
-	FinishReason any               `json:"finish_reason"`
-}
-
-type usageItem struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-}
-
-func hello(w http.ResponseWriter, r *http.Request) {
-	usage_item := usageItem{
-		PromptTokens:     9,
-		CompletionTokens: 12,
-		TotalTokens:      21,
+func CompletionHandle(w http.ResponseWriter, r *http.Request) {
+	response_controller := http.NewResponseController(w)
+	var userReq ChatCompleteionRequest
+	if err := BindJSON(r, &userReq); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		errorResponse, _ := json.Marshal(map[string]string{"error": "Failed to parse user request"})
+		w.Write(errorResponse)
+		fmt.Printf("[Error] Failed to parse user request: %s\n", err)
+		return
 	}
 
-	choice := choiceItem{
-		Index: 0,
-		Message: map[string]string{
-			"role":    "assistant",
-			"content": "Generate content here.",
-		},
-		FinishReason: "stop",
-	}
-
-	response := apiResponse{
-		Id:      "chatcmpl-123",
-		Object:  "chat.completion",
-		Created: 1677652288,
-		Model:   "gpt-4o",
-		Choices: []any{choice},
-		Usage:   usage_item,
-	}
-
-	response_byte, err := json.Marshal(response)
+	upstreamReq, err := BuildUpstreamRequest(r.Context(), &userReq)
 	if err != nil {
-		fmt.Println("[Err] Fail to marshal response")
+		w.WriteHeader(http.StatusInternalServerError)
+		errorResponse, _ := json.Marshal(map[string]string{"error": "Failed to build request"})
+		w.Write(errorResponse)
+		fmt.Printf("[Error] Failed to build request: %s\n", err)
+		return
 	}
-	w.Header().Set("content-type", "application/json")
-	w.Write(response_byte)
-}
 
-func sseHandle(w http.ResponseWriter, r *http.Request) {
+	client := &http.Client{}
+	resp, err := client.Do(upstreamReq)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		errorResponse, _ := json.Marshal(map[string]string{"error": "Upstream unavailable"})
+		w.Write(errorResponse)
+		fmt.Printf("[Error] Upstream unavailable: %s\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// 读取上游错误响应
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		w.WriteHeader(resp.StatusCode)
+		w.Write(bodyBytes)
+		fmt.Printf("[Error] Upstream returned status %d: %s\n", resp.StatusCode, string(bodyBytes))
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
 
-	client_disconnect := r.Context().Done()
-	response_controller := http.NewResponseController(w)
+	reader := bufio.NewReader(resp.Body)
 
-	response_msg := "Hello, this is a response from go."
-	tokens := strings.Split(response_msg, " ")
-	for _, token := range tokens {
-		select {
-		case <-client_disconnect:
-			fmt.Println("[Info] Client Disconnected.")
-			return
-		default:
-			single_choice := sseChoiceItem{
-				Index: 0,
-				Delta: map[string]string{
-					"content": token,
-				},
-				FinishReason: nil,
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
 			}
-			single_response := sseResponse{
-				Id:      "chatcmpl-123",
-				Object:  "chat.completion.chunk",
-				Created: time.Now().Unix(),
-				Model:   "gpt-4o",
-				Choices: []any{single_choice},
-			}
-			single_response_byte, err := json.Marshal(single_response)
-			if err != nil {
-				fmt.Println("[Err] Fail to marshel sse response")
-			}
-			fmt.Fprintf(w, "data: %s\n\n", single_response_byte)
-			response_controller.Flush()
-			time.Sleep(100 * time.Millisecond)
+			fmt.Printf("[Error] Fail to read line from reader: %s\n", err)
+			break
 		}
+		w.Write(line)
+		response_controller.Flush()
 	}
-	fmt.Fprintf(w, "data: [DONE]\n\n")
-	response_controller.Flush()
 }
 
 func main() {
-	http.HandleFunc("/", hello)
-	http.HandleFunc("/stream", sseHandle)
-	fmt.Println("[Info] Starting server at 8080")
-	http.ListenAndServe(":8080", nil)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", CompletionHandle)
+
+	server := http.Server{
+		Addr:    fmt.Sprintf(":%d", serverPort),
+		Handler: mux,
+	}
+	fmt.Printf("[Info] Starting server at %d\n", serverPort)
+	err := server.ListenAndServe()
+	if err != nil {
+		fmt.Printf("[Error] Error running http server: %s\n", err)
+	}
 }
