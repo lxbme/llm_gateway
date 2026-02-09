@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 func CompletionHandle(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +32,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[Info] Content-Type: %s\n", r.Header.Get("Content-Type"))
 	// fmt.Printf("[Info] Content-Length: %d\n", r.ContentLength)
 
-	// parse user request
+	// parse user request (TODO: json.Unmarshal might bottleneck performance here)
 	var userReq ChatCompleteionRequest
 	if err := BindJSON(r, &userReq); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -41,6 +42,11 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// record user prompt for terminal printing
+	var userPrompt string
+	for _, message := range userReq.Messages {
+		userPrompt += message.Content + " "
+	}
 	fmt.Printf("[Info] Parsed request: model=%s, stream=%v, messages=%d\n", userReq.Model, userReq.Stream, len(userReq.Messages))
 
 	// build upstream request body from user request
@@ -86,6 +92,8 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	reader := bufio.NewReader(resp.Body)
 	writer, ok := w.(http.Flusher)
 
+	fullAnswerBuffer := strings.Builder{}
+
 	for {
 		// Check if client has disconnected
 		select {
@@ -104,6 +112,17 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("[Error] Failed to read from upstream: %s\n", err)
 			break
 		}
+
+		// skip parsing blank line
+		if len(line) > 0 && line[0] != '\n' && line[0] != '\r' {
+			answerString, err := ParseSSELine(line)
+			if err != nil {
+				fmt.Printf("[Error] Fail to parse sse line: %s\n", err)
+			} else {
+				fullAnswerBuffer.Write([]byte(answerString))
+			}
+		}
+
 		_, writeErr := w.Write(line)
 		if writeErr != nil {
 			fmt.Printf("[Info] Client disconnected while writing: %s\n", writeErr)
@@ -113,4 +132,10 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 			writer.Flush()
 		}
 	}
+	if len(userPrompt) > 100 {
+		fmt.Printf("user: ...%s\n", userPrompt[len(userPrompt)-100:])
+	} else {
+		fmt.Printf("user: %s\n", userPrompt)
+	}
+	fmt.Printf("ai: %s\n", fullAnswerBuffer.String())
 }

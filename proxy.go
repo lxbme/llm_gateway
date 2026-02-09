@@ -12,6 +12,7 @@ import (
 
 func BuildUpstreamRequest(ctx context.Context, original_req *ChatCompleteionRequest) (*http.Request, error) {
 	original_req.Stream = true
+	// original_req.StreamOptions = map[string]bool{"include_usage": true}
 	reqBodyBytes, err := json.Marshal(original_req)
 	if err != nil {
 		return nil, fmt.Errorf("Fail to marshal original_req: %s", err)
@@ -48,4 +49,28 @@ func BindJSON(r *http.Request, obj interface{}) error {
 	}
 
 	return nil
+}
+
+func ParseSSELine(line []byte) (string, error) {
+	if len(line) == 0 {
+		return "", nil
+	}
+	if !bytes.HasPrefix(line, []byte("data: ")) {
+		return "", fmt.Errorf("invalid SSE line, has no prefix \"data: \"")
+	}
+	jsonBytes := bytes.TrimPrefix(line, []byte("data: "))
+	if bytes.Equal(jsonBytes, []byte("[DONE]")) {
+		return "", nil
+	}
+	var resp_struct ChatStreamResponse
+	if err := json.Unmarshal(jsonBytes, &resp_struct); err != nil {
+		return "", fmt.Errorf("fail to unmarshal SSE json part: %s", err)
+	}
+	if len(resp_struct.Choices) == 0 {
+		return "", nil
+	}
+	if resp_struct.Choices[0].FinishReason != "" {
+		return "", nil
+	}
+	return resp_struct.Choices[0].Delta.Content, nil
 }

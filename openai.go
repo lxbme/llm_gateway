@@ -12,3 +12,15 @@ type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
+
+type ChatStreamResponse struct {
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage *struct {
+		TotalTokens int `json:"total_tokens"`
+	} `json:"usage"`
+}
