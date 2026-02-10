@@ -15,13 +15,13 @@ func BuildUpstreamRequest(ctx context.Context, original_req *ChatCompleteionRequ
 	// original_req.StreamOptions = map[string]bool{"include_usage": true}
 	reqBodyBytes, err := json.Marshal(original_req)
 	if err != nil {
-		return nil, fmt.Errorf("Fail to marshal original_req: %s", err)
+		return nil, fmt.Errorf("fail to marshal original_req: %s", err)
 	}
-	gptUpstreamURL := "https://api.openai-proxy.org/v1/chat/completions"
+	gptUpstreamURL := openaiCompletionEndpoint
 
 	req, err := http.NewRequestWithContext(ctx, "POST", gptUpstreamURL, bytes.NewBuffer(reqBodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("Fail to create request: %s", err)
+		return nil, fmt.Errorf("fail to create request: %s", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -40,7 +40,6 @@ func BindJSON(r *http.Request, obj interface{}) error {
 	defer r.Body.Close()
 
 	decoder := json.NewDecoder(r.Body)
-	// 暂时禁用此选项以便更宽松地解析
 	// decoder.DisallowUnknownFields()
 
 	err := decoder.Decode(obj)

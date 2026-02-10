@@ -3,18 +3,32 @@ package main
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/qdrant/go-client/qdrant"
 )
 
 const serverPort = 8080
-const qdrant_collection_name = "llm_semantic_cache"
-const qdrant_client_port = 6334
-const qdrant_host = "localhost"
+const qdrantCollectionName = "llm_semantic_cache"
+const qdrantClientPort = 6334
+const qdrantHost = "localhost"
+const openaiCompletionEndpoint = "https://api.openai-proxy.org/v1/chat/completions"
+const openaiEmbeddingEndpoint = "https://api.openai-proxy.org/v1/embeddings"
+const embeddingModel = "text-embedding-3-small"
+const embeddingDimensions = 1536
 
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", CompletionHandle)
 
-	err := CreateQdrantcollection(qdrant_host, qdrant_client_port, qdrant_collection_name)
+	qclient, err := qdrant.NewClient(&qdrant.Config{
+		Host: qdrantHost,
+		Port: qdrantClientPort,
+	})
+	if err != nil {
+		fmt.Printf("Fail to create qdrant client: %s", err)
+	}
+
+	err = CreateQdrantcollection(qclient, embeddingDimensions, qdrantCollectionName)
 	if err != nil {
 		fmt.Printf("[Error] Fail to create qdrant collection: %s", err)
 	}

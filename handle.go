@@ -72,7 +72,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// Read Upstream error respons
+		// Read Upstream error response
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		w.WriteHeader(resp.StatusCode)
 		w.Write(bodyBytes)
@@ -80,7 +80,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// send back upstream respons to client
+	// send back upstream response to client
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
