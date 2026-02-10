@@ -207,3 +207,33 @@ func QdrantStoreCache(client *qdrant.Client, collectionName string, embedded []f
 	}
 	return nil
 }
+
+func QdrantSearchSimilar(qdrantClient *qdrant.Client, httpClient *http.Client, dimensions int, collectionName string, userPrompt string, model string, similarityThreshold float32) (bool, string, error) {
+	embedding, err := GetEmbedding(httpClient, userPrompt, dimensions)
+	if err != nil {
+		return false, "", err
+	}
+	searchResult, err := qdrantClient.Query(context.Background(), &qdrant.QueryPoints{
+		CollectionName: collectionName,
+		Query:          qdrant.NewQueryDense(embedding),
+		Filter: &qdrant.Filter{
+			Must: []*qdrant.Condition{
+				qdrant.NewMatch("model", model),
+			},
+		},
+		WithPayload:    qdrant.NewWithPayload(true),
+		ScoreThreshold: qdrant.PtrOf(similarityThreshold),
+	})
+	if err != nil {
+		return false, "", fmt.Errorf("fail to search qdrant: %w", err)
+	}
+	if len(searchResult) == 0 {
+		return false, "", nil
+	}
+	answer, ok := searchResult[0].Payload["answer"]
+	if !ok {
+		return false, "", nil
+	}
+	fmt.Printf("[Info] Hit cache: %s\n", searchResult[0].Id.GetUuid())
+	return true, answer.GetStringValue(), nil
+}
