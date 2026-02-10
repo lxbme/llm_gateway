@@ -50,26 +50,35 @@ func BindJSON(r *http.Request, obj interface{}) error {
 	return nil
 }
 
-func ParseSSELine(line []byte) (string, error) {
+func ParseSSELine(line []byte) (string, int, error) {
 	if len(line) == 0 {
-		return "", nil
+		return "", 0, nil
 	}
 	if !bytes.HasPrefix(line, []byte("data: ")) {
-		return "", fmt.Errorf("invalid SSE line, has no prefix \"data: \"")
+		return "", 0, fmt.Errorf("invalid SSE line, has no prefix \"data: \"")
 	}
 	jsonBytes := bytes.TrimPrefix(line, []byte("data: "))
 	if bytes.Equal(jsonBytes, []byte("[DONE]")) {
-		return "", nil
+		return "", 0, nil
 	}
 	var resp_struct ChatStreamResponse
 	if err := json.Unmarshal(jsonBytes, &resp_struct); err != nil {
-		return "", fmt.Errorf("fail to unmarshal SSE json part: %s", err)
+		return "", 0, fmt.Errorf("fail to unmarshal SSE json part: %s", err)
 	}
+
+	// filter corner case
+	// last sse block
+	if resp_struct.Usage != nil && resp_struct.Usage.TotalTokens != 0 {
+		// fmt.Printf("[Debug] Detect last block: %d\n", resp_struct.Usage.TotalTokens)
+		return "", resp_struct.Usage.TotalTokens, nil
+	}
+
 	if len(resp_struct.Choices) == 0 {
-		return "", nil
+		return "", 0, nil
 	}
 	if resp_struct.Choices[0].FinishReason != "" {
-		return "", nil
+		return "", 0, nil
 	}
-	return resp_struct.Choices[0].Delta.Content, nil
+
+	return resp_struct.Choices[0].Delta.Content, 0, nil
 }

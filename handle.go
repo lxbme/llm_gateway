@@ -93,6 +93,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	writer, ok := w.(http.Flusher)
 
 	fullAnswerBuffer := strings.Builder{}
+	var totalTokens int = 0
 
 	for {
 		// Check if client has disconnected
@@ -115,10 +116,13 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 
 		// skip parsing blank line
 		if len(line) > 0 && line[0] != '\n' && line[0] != '\r' {
-			answerString, err := ParseSSELine(line)
+			answerString, totalTokensReceiver, err := ParseSSELine(line)
 			if err != nil {
 				fmt.Printf("[Error] Fail to parse sse line: %s\n", err)
 			} else {
+				if totalTokensReceiver != 0 {
+					totalTokens = totalTokensReceiver
+				}
 				fullAnswerBuffer.Write([]byte(answerString))
 			}
 		}
@@ -138,4 +142,13 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("user: %s\n", userPrompt)
 	}
 	fmt.Printf("ai: %s\n", fullAnswerBuffer.String())
+
+	semanticCacheService.Submit(SemanticCacheTask{
+		CollectionName: qdrantCollectionName,
+		UserPrompt:     userPrompt,
+		AIResponse:     fullAnswerBuffer.String(),
+		Dimension:      embeddingDimensions,
+		ModelName:      userReq.Model,
+		TokenUsage:     totalTokens,
+	})
 }

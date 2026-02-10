@@ -16,6 +16,8 @@ const openaiEmbeddingEndpoint = "https://api.openai-proxy.org/v1/embeddings"
 const embeddingModel = "text-embedding-3-small"
 const embeddingDimensions = 1536
 
+var semanticCacheService *SemanticCacheService
+
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", CompletionHandle)
@@ -27,11 +29,14 @@ func main() {
 	if err != nil {
 		fmt.Printf("Fail to create qdrant client: %s", err)
 	}
-
 	err = CreateQdrantcollection(qclient, embeddingDimensions, qdrantCollectionName)
 	if err != nil {
 		fmt.Printf("[Error] Fail to create qdrant collection: %s", err)
 	}
+
+	semanticCacheService = NewSemanticCacheService(1000)
+	semanticCacheService.Start(5)
+	defer semanticCacheService.Shutdown()
 
 	server := http.Server{
 		Addr:    fmt.Sprintf(":%d", serverPort),
