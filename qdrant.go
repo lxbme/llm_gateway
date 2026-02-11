@@ -15,25 +15,77 @@ import (
 	"github.com/qdrant/go-client/qdrant"
 )
 
-type SemanticCacheTask struct {
-	CollectionName string
-	UserPrompt     string
-	AIResponse     string
-	Dimension      int
-	ModelName      string
-	TokenUsage     int
-}
-
-type SemanticCacheService struct {
+type QdrantSemanticCacheService struct {
 	taskChan            chan SemanticCacheTask
 	wg                  sync.WaitGroup
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	qdrantClient        *qdrant.Client
-	EmbeddingHttpClient *http.Client
+	dimensions          int
+	collectionName      string
+	similarityThreshold float32
+	embeddingService    EmbeddingService
 }
 
-func NewSemanticCacheService(bufferSize int) *SemanticCacheService {
+// Get implements [SemanticCacheService].
+func (s *QdrantSemanticCacheService) Get(ctx context.Context, question string, model string) (string, bool, error) {
+	found, answer, err := s.searchSimilar(ctx, question, model)
+	if err != nil {
+		return "", false, err
+	}
+	return answer, found, nil
+}
+
+// InitQdrant initializes the Qdrant semantic cache service
+func (s *QdrantSemanticCacheService) InitQdrant(bufferSize int, workerCount int, dimensions int,
+	similarityThreshold float32, collectionName string, qdrantHost string, qdrantPort int, embeddingService EmbeddingService) error {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	qclient, err := qdrant.NewClient(&qdrant.Config{
+		Host: qdrantHost,
+		Port: qdrantPort,
+	})
+	if err != nil {
+		cancel()
+		return fmt.Errorf("fail to create init qdrant client: %w", err)
+	}
+
+	s.taskChan = make(chan SemanticCacheTask, bufferSize)
+	s.ctx = ctx
+	s.cancel = cancel
+	s.qdrantClient = qclient
+	s.dimensions = dimensions
+	s.collectionName = collectionName
+	s.similarityThreshold = similarityThreshold
+	s.embeddingService = embeddingService
+
+	err = createQdrantCollection(s.qdrantClient, dimensions, collectionName)
+	if err != nil {
+		return fmt.Errorf("fail to create qdrant collection: %w", err)
+	}
+
+	s.start(workerCount)
+
+	return nil
+}
+
+// Set implements [SemanticCacheService].
+func (s *QdrantSemanticCacheService) Set(ctx context.Context, item SemanticCacheTask) error {
+	if !s.submit(item) {
+		return fmt.Errorf("failed to submit task: queue is full")
+	}
+	return nil
+}
+
+// Shutdown implements [SemanticCacheService].
+func (s *QdrantSemanticCacheService) Shutdown() {
+	fmt.Println("[Info] Shutting down cache service...")
+	close(s.taskChan)
+	s.wg.Wait()
+	fmt.Println("[Info] Cache service stopped")
+}
+
+func NewSemanticCacheService(bufferSize int, threshold float32) *QdrantSemanticCacheService {
 	ctx, cancel := context.WithCancel(context.Background())
 	qclient, err := qdrant.NewClient(&qdrant.Config{
 		Host: qdrantHost,
@@ -42,16 +94,17 @@ func NewSemanticCacheService(bufferSize int) *SemanticCacheService {
 	if err != nil {
 		fmt.Printf("Fail to create qdrant client in service: %s", err)
 	}
-	return &SemanticCacheService{
-		taskChan:            make(chan SemanticCacheTask, bufferSize),
-		ctx:                 ctx,
-		cancel:              cancel,
-		qdrantClient:        qclient,
-		EmbeddingHttpClient: &http.Client{},
+	return &QdrantSemanticCacheService{
+		taskChan:     make(chan SemanticCacheTask, bufferSize),
+		ctx:          ctx,
+		cancel:       cancel,
+		qdrantClient: qclient,
+		// EmbeddingHttpClient: &http.Client{},
+		similarityThreshold: threshold,
 	}
 }
 
-func (s *SemanticCacheService) Start(workerCount int) {
+func (s *QdrantSemanticCacheService) start(workerCount int) {
 	for i := 0; i < workerCount; i++ {
 		s.wg.Add(1)
 		go s.worker(i)
@@ -59,7 +112,7 @@ func (s *SemanticCacheService) Start(workerCount int) {
 	fmt.Printf("[Info] Started %d embedding cache workers\n", workerCount)
 }
 
-func (s *SemanticCacheService) worker(id int) {
+func (s *QdrantSemanticCacheService) worker(id int) {
 	defer s.wg.Done()
 
 	for {
@@ -81,13 +134,14 @@ func (s *SemanticCacheService) worker(id int) {
 	}
 }
 
-func (s *SemanticCacheService) processTask(task SemanticCacheTask) error {
-	embedding, err := GetEmbedding(s.EmbeddingHttpClient, task.UserPrompt, task.Dimension)
+func (s *QdrantSemanticCacheService) processTask(task SemanticCacheTask) error {
+	// embedding, err := GetEmbedding(s.EmbeddingHttpClient, task.UserPrompt, task.Dimension)
+	embedding, err := s.embeddingService.Get(context.Background(), task.UserPrompt)
 	if err != nil {
 		return fmt.Errorf("fail to get embedding in worker: %w", err)
 	}
 
-	err = QdrantStoreCache(s.qdrantClient, task.CollectionName, embedding, task.UserPrompt, task.AIResponse, task.ModelName, task.TokenUsage)
+	err = s.storeCache(embedding, task.UserPrompt, task.AIResponse, task.ModelName, task.TokenUsage)
 	if err != nil {
 		return fmt.Errorf("fail to store embedding to qdrant in worker: %w", err)
 	}
@@ -96,7 +150,7 @@ func (s *SemanticCacheService) processTask(task SemanticCacheTask) error {
 	return nil
 }
 
-func (s *SemanticCacheService) Submit(task SemanticCacheTask) bool {
+func (s *QdrantSemanticCacheService) submit(task SemanticCacheTask) bool {
 	select {
 	case s.taskChan <- task:
 		return true
@@ -106,21 +160,14 @@ func (s *SemanticCacheService) Submit(task SemanticCacheTask) bool {
 	}
 }
 
-func (s *SemanticCacheService) Shutdown() {
-	fmt.Println("[Info] Shutting down cache service...")
-	close(s.taskChan)
-	s.wg.Wait()
-	fmt.Println("[Info] Cache service stopped")
-}
-
-func CreateQdrantcollection(client *qdrant.Client, dimensions int, collection_name string) error {
-	is_exist, err := client.CollectionExists(context.Background(), collection_name)
+func createQdrantCollection(client *qdrant.Client, dimensions int, collectionName string) error {
+	is_exist, err := client.CollectionExists(context.Background(), collectionName)
 	if err != nil {
-		return fmt.Errorf("Fail to check if collection %s exist or not: %s", collection_name, err)
+		return fmt.Errorf("Fail to check if collection %s exist or not: %s", collectionName, err)
 	}
 	if !is_exist {
 		err = client.CreateCollection(context.Background(), &qdrant.CreateCollection{
-			CollectionName: collection_name,
+			CollectionName: collectionName,
 			VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
 				Size:     uint64(dimensions),
 				Distance: qdrant.Distance_Cosine,
@@ -136,58 +183,12 @@ func CreateQdrantcollection(client *qdrant.Client, dimensions int, collection_na
 	}
 }
 
-// get embedding vector from embedding endpoint
-func GetEmbedding(client *http.Client, input string, dimensions int) ([]float32, error) {
-	requestBody := EmbeddingRequest{
-		Model:          embeddingModel,
-		Input:          input,
-		EncodingFormat: "float",
-		Dimensions:     int32(dimensions),
-	}
-	requestBodyBytes, err := json.Marshal(requestBody)
-	if err != nil {
-		return nil, fmt.Errorf("fail to marshal embedding request body: %w", err)
-	}
-	req, err := http.NewRequest("POST", openaiEmbeddingEndpoint, bytes.NewBuffer(requestBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("fail to new embedding request: %w", err)
-	}
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("empty openai api key")
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fail to do embedding request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("embedding request fail: (%d) %s", resp.StatusCode, body)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("fail to read embedding response body: %w", err)
-	}
-	var respBody EmbeddingResponse
-	if err := json.Unmarshal(body, &respBody); err != nil {
-		return nil, fmt.Errorf("fail to unmarshal embedding response: %w", err)
-	}
-	if len(respBody.Data) == 0 {
-		return nil, fmt.Errorf("empty embedding response data")
-	}
-	return respBody.Data[0].Embedding, nil
-}
-
-func QdrantStoreCache(client *qdrant.Client, collectionName string, embedded []float32, questionText string, answerText string, modelName string, tokenUsage int) error {
+// storeCache stores embedding cache to Qdrant using service resources
+func (s *QdrantSemanticCacheService) storeCache(embedded []float32, questionText string, answerText string, modelName string, tokenUsage int) error {
 	timeStamp := time.Now().Unix()
 	pointId := uuid.New().String()
-	_, err := client.Upsert(context.Background(), &qdrant.UpsertPoints{
-		CollectionName: collectionName,
+	_, err := s.qdrantClient.Upsert(context.Background(), &qdrant.UpsertPoints{
+		CollectionName: s.collectionName,
 		Points: []*qdrant.PointStruct{
 			{
 				Id:      qdrant.NewID(pointId),
@@ -208,13 +209,14 @@ func QdrantStoreCache(client *qdrant.Client, collectionName string, embedded []f
 	return nil
 }
 
-func QdrantSearchSimilar(qdrantClient *qdrant.Client, httpClient *http.Client, dimensions int, collectionName string, userPrompt string, model string, similarityThreshold float32) (bool, string, error) {
-	embedding, err := GetEmbedding(httpClient, userPrompt, dimensions)
+// searchSimilar searches for similar cache entries using service resources
+func (s *QdrantSemanticCacheService) searchSimilar(ctx context.Context, userPrompt string, model string) (bool, string, error) {
+	embedding, err := s.embeddingService.Get(ctx, userPrompt)
 	if err != nil {
 		return false, "", err
 	}
-	searchResult, err := qdrantClient.Query(context.Background(), &qdrant.QueryPoints{
-		CollectionName: collectionName,
+	searchResult, err := s.qdrantClient.Query(ctx, &qdrant.QueryPoints{
+		CollectionName: s.collectionName,
 		Query:          qdrant.NewQueryDense(embedding),
 		Filter: &qdrant.Filter{
 			Must: []*qdrant.Condition{
@@ -222,7 +224,7 @@ func QdrantSearchSimilar(qdrantClient *qdrant.Client, httpClient *http.Client, d
 			},
 		},
 		WithPayload:    qdrant.NewWithPayload(true),
-		ScoreThreshold: qdrant.PtrOf(similarityThreshold),
+		ScoreThreshold: qdrant.PtrOf(s.similarityThreshold),
 	})
 	if err != nil {
 		return false, "", fmt.Errorf("fail to search qdrant: %w", err)
@@ -236,4 +238,69 @@ func QdrantSearchSimilar(qdrantClient *qdrant.Client, httpClient *http.Client, d
 	}
 	fmt.Printf("[Info] Hit cache: %s\n", searchResult[0].Id.GetUuid())
 	return true, answer.GetStringValue(), nil
+}
+
+type OpenaiEmbeddingService struct {
+	endpoint   string
+	apiKeyEnv  string
+	client     *http.Client
+	dimensions int
+}
+
+func (s *OpenaiEmbeddingService) Get(ctx context.Context, question string) ([]float32, error) {
+	return s.getEmbedding(question)
+}
+
+func (s *OpenaiEmbeddingService) Init(endpoint string, apiKeyEnvName string, dimension int) {
+	s.endpoint = endpoint
+	s.apiKeyEnv = apiKeyEnvName
+	s.client = &http.Client{}
+	s.dimensions = dimension
+}
+
+// getEmbedding gets embedding vector from embedding endpoint
+func (s *OpenaiEmbeddingService) getEmbedding(input string) ([]float32, error) {
+	requestBody := EmbeddingRequest{
+		Model:          embeddingModel,
+		Input:          input,
+		EncodingFormat: "float",
+		Dimensions:     int32(s.dimensions),
+	}
+	requestBodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("fail to marshal embedding request body: %w", err)
+	}
+	req, err := http.NewRequest("POST", s.endpoint, bytes.NewBuffer(requestBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("fail to new embedding request: %w", err)
+	}
+	apiKey := os.Getenv(s.apiKeyEnv)
+	if apiKey == "" {
+		return nil, fmt.Errorf("empty openai api key")
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fail to do embedding request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("embedding request fail: (%d) %s", resp.StatusCode, body)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("fail to read embedding response body: %w", err)
+	}
+	var respBody EmbeddingResponse
+	if err := json.Unmarshal(body, &respBody); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal embedding response: %w", err)
+	}
+	if len(respBody.Data) == 0 {
+		return nil, fmt.Errorf("empty embedding response data")
+	}
+	return respBody.Data[0].Embedding, nil
 }

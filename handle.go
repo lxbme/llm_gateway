@@ -50,9 +50,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Printf("[Info] Parsed request: model=%s, stream=%v, messages=%d\n", userReq.Model, userReq.Stream, len(userReq.Messages))
 
-	isHit, cacheAnswer, err := QdrantSearchSimilar(semanticCacheService.qdrantClient,
-		semanticCacheService.EmbeddingHttpClient, embeddingDimensions, qdrantCollectionName,
-		userPrompt, userReq.Model, similarityThreshold)
+	cacheAnswer, isHit, err := semanticCacheService.Get(r.Context(), userPrompt, userReq.Model)
 	if err != nil {
 		fmt.Printf("[Error] Failed to search similar vector in qdrant: %s", err)
 	}
@@ -152,7 +150,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 
 	PrintDialog(userPrompt, fullAnswerBuffer.String())
 	// cache
-	semanticCacheService.Submit(SemanticCacheTask{
+	semanticCacheService.Set(r.Context(), SemanticCacheTask{
 		CollectionName: qdrantCollectionName,
 		UserPrompt:     userPrompt,
 		AIResponse:     fullAnswerBuffer.String(),
