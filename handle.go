@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"llm_gateway/cache"
 )
 
 func CompletionHandle(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +152,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 
 	PrintDialog(userPrompt, fullAnswerBuffer.String())
 	// cache
-	semanticCacheService.Set(r.Context(), SemanticCacheTask{
+	semanticCacheService.Set(r.Context(), cache.Task{
 		CollectionName: qdrantCollectionName,
 		UserPrompt:     userPrompt,
 		AIResponse:     fullAnswerBuffer.String(),
