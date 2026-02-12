@@ -1,15 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"llm_gateway/cache"
+	"llm_gateway/completion"
 )
 
 func CompletionHandle(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +51,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Printf("[Info] Parsed request: model=%s, stream=%v, messages=%d\n", userReq.Model, userReq.Stream, len(userReq.Messages))
 
+	// queue for cache answer
 	cacheAnswer, isHit, err := semanticCacheService.Get(r.Context(), userPrompt, userReq.Model)
 	if err != nil {
 		fmt.Printf("[Error] Failed to search similar vector in qdrant: %s\n", err)
@@ -62,38 +62,25 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// build upstream request body from user request
-	upstreamReq, err := BuildUpstreamRequest(r.Context(), &userReq)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		errorResponse, _ := json.Marshal(map[string]string{"error": "Failed to build request"})
-		w.Write(errorResponse)
-		fmt.Printf("[Error] Failed to build request: %s\n", err)
-		return
+	// Build completion request
+	completionReq := &completion.CompletionRequest{
+		Model:       userReq.Model,
+		Question:    userPrompt,
+		Temperature: userReq.Temperature,
+		MaxTokens:   userReq.MaxTokens,
 	}
 
-	// make upstream request
-	client := &http.Client{}
-	resp, err := client.Do(upstreamReq)
+	// Get stream from completion service
+	chunks, err := completionService.GetStream(r.Context(), completionReq)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
-		errorResponse, _ := json.Marshal(map[string]string{"error": "Upstream unavailable"})
+		errorResponse, _ := json.Marshal(map[string]string{"error": "Failed to get stream"})
 		w.Write(errorResponse)
-		fmt.Printf("[Error] Upstream unavailable: %s\n", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		// Read Upstream error response
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		w.WriteHeader(resp.StatusCode)
-		w.Write(bodyBytes)
-		fmt.Printf("[Error] Upstream returned status %d: %s\n", resp.StatusCode, string(bodyBytes))
+		fmt.Printf("[Error] Failed to get stream: %s\n", err)
 		return
 	}
 
-	// send back upstream response to client
+	// Send back streaming response to client
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -102,13 +89,17 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-	reader := bufio.NewReader(resp.Body)
-	writer, ok := w.(http.Flusher)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
 
 	fullAnswerBuffer := strings.Builder{}
-	var totalTokens int = 0
+	var totalTokens int
 
-	for {
+	// Read from channel and send to client
+	for chunk := range chunks {
 		// Check if client has disconnected
 		select {
 		case <-r.Context().Done():
@@ -117,36 +108,63 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		default:
 		}
 
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			if err == io.EOF {
-				fmt.Printf("[Info] Stream completed successfully\n")
-				break
-			}
-			fmt.Printf("[Error] Failed to read from upstream: %s\n", err)
+		// Handle errors
+		if chunk.Error != nil {
+			fmt.Printf("[Error] Stream error: %s\n", chunk.Error)
 			break
 		}
 
-		// skip parsing blank line
-		if len(line) > 0 && line[0] != '\n' && line[0] != '\r' {
-			answerString, totalTokensReceiver, err := ParseSSELine(line)
-			if err != nil {
-				fmt.Printf("[Error] Fail to parse sse line: %s\n", err)
-			} else {
-				if totalTokensReceiver != 0 {
-					totalTokens = totalTokensReceiver
-				}
-				fullAnswerBuffer.Write([]byte(answerString))
+		// Accumulate content
+		if chunk.Content != "" {
+			fullAnswerBuffer.WriteString(chunk.Content)
+
+			// Build and send SSE response
+			response := ChatStreamResponse{
+				Choices: []struct {
+					Delta struct {
+						Content string `json:"content"`
+					} `json:"delta"`
+					FinishReason string `json:"finish_reason"`
+				}{
+					{
+						Delta: struct {
+							Content string `json:"content"`
+						}{Content: chunk.Content},
+						FinishReason: "",
+					},
+				},
+				Usage: nil,
 			}
+
+			jsonBytes, _ := json.Marshal(response)
+			fmt.Fprintf(w, "data: %s\n\n", string(jsonBytes))
+			flusher.Flush()
 		}
 
-		_, writeErr := w.Write(line)
-		if writeErr != nil {
-			fmt.Printf("[Info] Client disconnected while writing: %s\n", writeErr)
-			return
-		}
-		if ok {
-			writer.Flush()
+		// Handle stream completion
+		if chunk.Done {
+			totalTokens = chunk.TokenUsage
+			fmt.Printf("[Info] Stream completed successfully\n")
+
+			// Send finish message
+			finishResponse := map[string]interface{}{
+				"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
+				"object":  "chat.completion.chunk",
+				"created": time.Now().Unix(),
+				"model":   userReq.Model,
+				"choices": []map[string]interface{}{
+					{
+						"index":         0,
+						"delta":         map[string]string{},
+						"finish_reason": "stop",
+					},
+				},
+			}
+			finishJSON, _ := json.Marshal(finishResponse)
+			fmt.Fprintf(w, "data: %s\n\n", string(finishJSON))
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			flusher.Flush()
+			break
 		}
 	}
 
