@@ -11,10 +11,8 @@ type Service interface {
 
 // Task represents a semantic cache task
 type Task struct {
-	CollectionName string
-	UserPrompt     string
-	AIResponse     string
-	Dimension      int
-	ModelName      string
-	TokenUsage     int
+	UserPrompt string
+	AIResponse string
+	ModelName  string
+	TokenUsage int
 }

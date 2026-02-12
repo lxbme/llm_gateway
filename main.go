@@ -11,6 +11,7 @@ import (
 
 const serverPort = 8080
 const openaiCompletionEndpoint = "https://api.openai-proxy.org/v1/chat/completions"
+
 const openaiEmbeddingEndpoint = "https://api.openai-proxy.org/v1/embeddings"
 const embeddingModel = "text-embedding-3-small"
 const embeddingDimensions = 1536

@@ -54,7 +54,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 
 	cacheAnswer, isHit, err := semanticCacheService.Get(r.Context(), userPrompt, userReq.Model)
 	if err != nil {
-		fmt.Printf("[Error] Failed to search similar vector in qdrant: %s", err)
+		fmt.Printf("[Error] Failed to search similar vector in qdrant: %s\n", err)
 	}
 	if isHit {
 		returnCachedAnswer(w, cacheAnswer, userReq.Model)
@@ -153,12 +153,10 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	PrintDialog(userPrompt, fullAnswerBuffer.String())
 	// cache
 	semanticCacheService.Set(r.Context(), cache.Task{
-		CollectionName: qdrantCollectionName,
-		UserPrompt:     userPrompt,
-		AIResponse:     fullAnswerBuffer.String(),
-		Dimension:      embeddingDimensions,
-		ModelName:      userReq.Model,
-		TokenUsage:     totalTokens,
+		UserPrompt: userPrompt,
+		AIResponse: fullAnswerBuffer.String(),
+		ModelName:  userReq.Model,
+		TokenUsage: totalTokens,
 	})
 }
 
