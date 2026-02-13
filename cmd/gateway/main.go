@@ -5,22 +5,16 @@ import (
 	"net/http"
 
 	"llm_gateway/cache"
-	qdrantCache "llm_gateway/cache/qdrant"
+	cacheGrpc "llm_gateway/cache/grpc"
 	"llm_gateway/completion"
 	openaiCompletionService "llm_gateway/completion/openai"
-	embeddingGrpc "llm_gateway/embedding/grpc"
 )
 
 const serverPort = 8080
 const openaiCompletionEndpoint = "https://api.openai-proxy.org/v1/chat/completions"
 const completionApiKeyEnvName = "OPENAI_API_KEY"
 
-const embeddingDimensions = 1536
-const embeddingGrpcAddress = "localhost:50051"
-
-const qdrantSimilarityThreshold = 0.95
-const qdrantCollectionName = "llm_semantic_cache"
-const qdrantClientPort = 6334
+const cacheGrpcAddress = "localhost:50052"
 const qdrantHost = "localhost"
 
 var semanticCacheService cache.Service
@@ -30,30 +24,13 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", CompletionHandle)
 
-	// Initialize embedding service (grpc client)
-	embeddingService, err := embeddingGrpc.NewClient(embeddingGrpcAddress)
-	if err != nil {
-		fmt.Printf("[Error] Failed to create embedding client: %s\n", err)
-		return
-	}
-	defer embeddingService.Close()
-
 	// Initialize cache service
-	cacheSvc, err := qdrantCache.New(
-		1000, // bufferSize
-		5,    // workerCount
-		embeddingDimensions,
-		float32(qdrantSimilarityThreshold),
-		qdrantCollectionName,
-		qdrantHost,
-		qdrantClientPort,
-		embeddingService,
-	)
+	cacheSvc, err := cacheGrpc.NewClient(cacheGrpcAddress)
 	if err != nil {
 		fmt.Printf("[Error] Fail to init semantic cache service: %s\n", err)
 		return
 	}
-	defer cacheSvc.Shutdown()
+	defer cacheSvc.Close()
 
 	completionSvc := openaiCompletionService.New(
 		openaiCompletionEndpoint,

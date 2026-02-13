@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package cache;
+
+option go_package = "cache/proto";
+
+service CacheService {
+    rpc SearchSimilar(SearchRequest) returns (SearchResponse);
+	rpc SaveCache(CacheTaskRequest) returns (SaveCacheResponse);
+}
+
+message SearchRequest {
+    string prompt = 1;
+    string model = 2;
+}
+
+message SearchResponse {
+    string answer = 1;
+    bool isHit = 2;
+    string error = 3;
+}
+
+message CacheTaskRequest {
+	string userPrompt = 1;
+	string aiResponse = 2;
+	string modelName = 3;
+	int32 tokenUsage = 4;
+}
+
+message SaveCacheResponse {
+	string error = 1;
+}
