@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package embedding;
+
+option go_package = "embedding/proto";
+
+service EmbeddingService {
+    rpc GetEmbedding(EmbeddingRequest) returns (EmbeddingResponse);
+}
+
+message EmbeddingRequest {
+    string text = 1;
+}
+
+message EmbeddingResponse {
+    repeated float embedding = 1;
+    string error = 2;
+}
