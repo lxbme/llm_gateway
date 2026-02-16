@@ -3,7 +3,7 @@ package openai
 type ChatCompleteionRequest struct {
 	Model       string    `json:"model"`
 	Messages    []Message `json:"messages"`
-	Temperature int       `json:"temperature"`
+	Temperature float64   `json:"temperature,omitempty"`
 	MaxTokens   int       `json:"max_tokens,omitempty"`
 	Stream      bool      `json:"stream,omitempty"`
 }

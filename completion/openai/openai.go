@@ -39,8 +39,9 @@ func (s *OpenaiCompletionService) GetStream(ctx context.Context, req *completion
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("upstream api returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("upstream api returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	ch := make(chan *completion.CompletionChunk, 10)
@@ -149,6 +150,8 @@ func (s *OpenaiCompletionService) buildUpstreamRequest(ctx context.Context, orig
 	if err != nil {
 		return nil, fmt.Errorf("fail to marshal openai request: %w", err)
 	}
+
+	fmt.Printf("[Debug] Sending to OpenAI: %s\n", string(reqBodyBytes))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.endpoint, bytes.NewBuffer(reqBodyBytes))
 	if err != nil {

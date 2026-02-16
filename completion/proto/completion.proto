@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package completion;
+
+option go_package = "completion/proto";
+
+service CompletionService {
+    rpc GetStream(CompletionRequest) returns (stream CompletionChunk);
+}
+
+message CompletionRequest {
+    string model = 1;
+    string question = 2;
+    double temperature = 3;
+    int32 max_tokens = 4;
+    bool stream = 5;
+}
+
+message CompletionChunk {
+    string content = 1;
+    string error = 2;
+    bool done = 3;
+    int32 token_usage = 4;
+}

@@ -184,7 +184,7 @@ func PrintDialog(userText string, answerText string) {
 	} else {
 		fmt.Printf("user: %s\n", userText)
 	}
-	fmt.Printf("ai: %.100s\n", answerText)
+	fmt.Printf("ai: %.100s...\n", answerText)
 }
 
 // returnCachedAnswer simulate sse

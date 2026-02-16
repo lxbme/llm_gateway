@@ -7,15 +7,13 @@ import (
 	"llm_gateway/cache"
 	cacheGrpc "llm_gateway/cache/grpc"
 	"llm_gateway/completion"
-	openaiCompletionService "llm_gateway/completion/openai"
+	completionGrpc "llm_gateway/completion/grpc"
 )
 
 const serverPort = 8080
-const openaiCompletionEndpoint = "https://api.openai-proxy.org/v1/chat/completions"
-const completionApiKeyEnvName = "OPENAI_API_KEY"
 
 const cacheGrpcAddress = "localhost:50052"
-const qdrantHost = "localhost"
+const completionGrpcAddress = "localhost:50053"
 
 var semanticCacheService cache.Service
 var completionService completion.Service
@@ -32,10 +30,13 @@ func main() {
 	}
 	defer cacheSvc.Close()
 
-	completionSvc := openaiCompletionService.New(
-		openaiCompletionEndpoint,
-		completionApiKeyEnvName,
-	)
+	// Initialize completion service
+	completionSvc, err := completionGrpc.NewClient(completionGrpcAddress)
+	if err != nil {
+		fmt.Printf("[Error] Fail to init completion service: %s\n", err)
+		return
+	}
+	defer completionSvc.Close()
 
 	semanticCacheService = cacheSvc
 	completionService = completionSvc

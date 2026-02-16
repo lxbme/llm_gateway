@@ -3,7 +3,7 @@ package completion
 type CompletionRequest struct {
 	Model       string
 	Question    string
-	Temperature int
+	Temperature float64
 	MaxTokens   int
 	Stream      bool
 }
