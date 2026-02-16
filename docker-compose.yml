@@ -1,8 +1,5 @@
 version: '3.8'
 
-x-podman-args:
-  network_mode: bridge
-
 services:
   qdrant:
     image: qdrant/qdrant:latest
