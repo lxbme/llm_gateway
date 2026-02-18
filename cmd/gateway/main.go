@@ -38,7 +38,7 @@ func main() {
 
 	// Register pprof handlers
 	if debugMode == "true" {
-		fmt.Printf("[Debug] Debug mode on\n")
+		logInfo("Debug mode on")
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -49,7 +49,7 @@ func main() {
 	// Initialize cache service
 	cacheSvc, err := cacheGrpc.NewClient(cacheGrpcAddress)
 	if err != nil {
-		fmt.Printf("[Error] Fail to init semantic cache service: %s\n", err)
+		logError("Fail to init semantic cache service: %s", err)
 		return
 	}
 	defer cacheSvc.Close()
@@ -57,7 +57,7 @@ func main() {
 	// Initialize completion service
 	completionSvc, err := completionGrpc.NewClient(completionGrpcAddress)
 	if err != nil {
-		fmt.Printf("[Error] Fail to init completion service: %s\n", err)
+		logError("Fail to init completion service: %s", err)
 		return
 	}
 	defer completionSvc.Close()
@@ -69,9 +69,9 @@ func main() {
 		Addr:    fmt.Sprintf(":%d", serverPort),
 		Handler: mux,
 	}
-	fmt.Printf("[Info] Starting server at %d\n", serverPort)
+	logInfo("Starting server at %d", serverPort)
 	err = server.ListenAndServe()
 	if err != nil {
-		fmt.Printf("[Error] Error running http server: %s\n", err)
+		logError("Error running http server: %s", err)
 	}
 }

@@ -30,13 +30,12 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("[Info] Received request: %s %s\n", r.Method, r.URL.Path)
-	fmt.Printf("[Info] Content-Type: %s\n", r.Header.Get("Content-Type"))
-	// fmt.Printf("[Info] Content-Length: %d\n", r.ContentLength)
+	logDebug("Received request: %s %s", r.Method, r.URL.Path)
+	// logDebug("Content-Type: %s", r.Header.Get("Content-Type"))
 
 	// process mock
 	if r.Header.Get("x-mock") == "true" {
-		fmt.Printf("[Info] x-mock: true\n")
+		logDebug("x-mock: true")
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -46,7 +45,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		for i := 0; i < 10; i++ {
 			w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"mock\"}}]}\n\n"))
 			flusher.Flush()
-			time.Sleep(10 * time.Millisecond)
+			// time.Sleep(10 * time.Millisecond)
 		}
 		return
 	}
@@ -57,7 +56,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		errorResponse, _ := json.Marshal(map[string]string{"error": "Failed to parse user request"})
 		w.Write(errorResponse)
-		fmt.Printf("[Error] Failed to parse user request: %s\n", err)
+		logError("Failed to parse user request: %s", err)
 		return
 	}
 
@@ -66,12 +65,12 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	for _, message := range userReq.Messages {
 		userPrompt += message.Content + " "
 	}
-	fmt.Printf("[Info] Parsed request: model=%s, stream=%v, messages=%d\n", userReq.Model, userReq.Stream, len(userReq.Messages))
+	logDebug("Parsed request: model=%s, stream=%v, messages=%d", userReq.Model, userReq.Stream, len(userReq.Messages))
 
 	// queue for cache answer
 	cacheAnswer, isHit, err := semanticCacheService.Get(r.Context(), userPrompt, userReq.Model)
 	if err != nil {
-		fmt.Printf("[Error] Failed to search similar vector in qdrant: %s\n", err)
+		logError("Failed to search similar vector in qdrant: %s", err)
 	}
 	if isHit {
 		returnCachedAnswer(w, cacheAnswer, userReq.Model)
@@ -93,7 +92,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		errorResponse, _ := json.Marshal(map[string]string{"error": "Failed to get stream"})
 		w.Write(errorResponse)
-		fmt.Printf("[Error] Failed to get stream: %s\n", err)
+		logError("Failed to get stream: %s", err)
 		return
 	}
 
@@ -120,14 +119,14 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		// Check if client has disconnected
 		select {
 		case <-r.Context().Done():
-			fmt.Printf("[Info] Client disconnected, stopping stream\n")
+			logDebug("Client disconnected, stopping stream")
 			return
 		default:
 		}
 
 		// Handle errors
 		if chunk.Error != nil {
-			fmt.Printf("[Error] Stream error: %s\n", chunk.Error)
+			logError("Stream error: %s", chunk.Error)
 			break
 		}
 
@@ -161,7 +160,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		// Handle stream completion
 		if chunk.Done {
 			totalTokens = chunk.TokenUsage
-			fmt.Printf("[Info] Stream completed successfully\n")
+			logDebug("Stream completed successfully")
 
 			// Send finish message
 			finishResponse := map[string]interface{}{
@@ -196,6 +195,9 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 }
 
 func PrintDialog(userText string, answerText string) {
+	if currentLogLevel < LogLevelDebug {
+		return
+	}
 	if len(userText) > 100 {
 		fmt.Printf("user: ...%s\n", strings.ReplaceAll(strings.ReplaceAll(userText[len(userText)-100:], "\n", ""), " ", ""))
 	} else {
