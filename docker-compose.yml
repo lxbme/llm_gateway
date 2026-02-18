@@ -68,6 +68,7 @@ services:
     environment:
       - CACHE_ADDR=cache-service:50052
       - COMPL_ADDR=completion-service:50053
+      - DEBUG_MODE=${DEBUG_MODE}
     depends_on:
       - cache-service
       - completion-service

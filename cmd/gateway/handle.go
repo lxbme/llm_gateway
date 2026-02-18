@@ -34,6 +34,23 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[Info] Content-Type: %s\n", r.Header.Get("Content-Type"))
 	// fmt.Printf("[Info] Content-Length: %d\n", r.ContentLength)
 
+	// process mock
+	if r.Header.Get("x-mock") == "true" {
+		fmt.Printf("[Info] x-mock: true\n")
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+			return
+		}
+		for i := 0; i < 10; i++ {
+			w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"mock\"}}]}\n\n"))
+			flusher.Flush()
+			time.Sleep(10 * time.Millisecond)
+		}
+		return
+	}
+
 	// parse user request (TODO: json.Unmarshal might bottleneck performance here)
 	var userReq ChatCompleteionRequest
 	if err := BindJSON(r, &userReq); err != nil {
