@@ -42,8 +42,9 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 			return
 		}
+		mockResponse := []byte("data: {\"choices\":[{\"delta\":{\"content\":\"mock\"}}]}\n\n")
 		for i := 0; i < 10; i++ {
-			w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"mock\"}}]}\n\n"))
+			w.Write(mockResponse)
 			flusher.Flush()
 			// time.Sleep(10 * time.Millisecond)
 		}
