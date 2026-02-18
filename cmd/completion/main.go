@@ -38,7 +38,7 @@ func main() {
 	s := grpc.NewServer()
 	pb.RegisterCompletionServiceServer(s, completiongrpc.NewServer(completionService))
 
-	fmt.Printf("[Info] Completion gRPC server listening on port %s", servePort)
+	fmt.Printf("[Info] Completion gRPC server listening on port %s\n", servePort)
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
