@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package auth;
+
+option go_package = "llm_gateway/auth/proto";
+
+service AuthService {
+    rpc Create(CreateRequest) returns (CreateResponse);
+    rpc Get(GetRequest) returns (GetResponse);
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+
+message CreateRequest {
+    string alias = 1;
+}
+
+message CreateResponse {
+    string token = 1;
+    string error = 2;
+}
+
+message GetRequest {
+    string token = 1;
+}
+
+message GetResponse {
+    bool valid = 1;
+    string alias = 2;
+    string error = 3;
+}
+
+message DeleteRequest {
+    string token = 1;
+}
+
+message DeleteResponse {
+    string error = 1;
+}

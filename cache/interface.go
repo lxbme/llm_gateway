@@ -4,7 +4,7 @@ import "context"
 
 // Service defines the interface for semantic cache operations
 type Service interface {
-	Get(ctx context.Context, question string, model string) (string, bool, error)
+	Get(ctx context.Context, question string, model string) (result string, success bool, err error)
 	Set(ctx context.Context, item Task) error
 }
 
