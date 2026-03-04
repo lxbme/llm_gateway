@@ -56,6 +56,7 @@ services:
     depends_on:
       - embedding-service
       - qdrant
+    restart: on-failure
     networks:
       - ai-net
   
@@ -91,15 +92,19 @@ services:
       dockerfile: ./dockerfile/Dockerfile.gateway
     ports:
       - "8080:8080"
+      - "127.0.0.1:8081:8081"
     environment:
       - CACHE_ADDR=cache-service:50052
       - COMPL_ADDR=completion-service:50053
+      - AUTH_ADDR=auth-service:50054
       - DEBUG_MODE=${DEBUG_MODE}
       - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+      - ADMIN_SECRET=${ADMIN_SECRET}
     depends_on:
       - cache-service
       - completion-service
       - auth-service
+    restart: on-failure
     networks:
       - ai-net
 

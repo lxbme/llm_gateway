@@ -12,24 +12,6 @@ import (
 )
 
 func CompletionHandle(w http.ResponseWriter, r *http.Request) {
-	// handle browser CORS Preflight Request
-	if r.Method == http.MethodOptions {
-		requestedHeaders := r.Header.Get("Access-Control-Request-Headers")
-
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-
-		if requestedHeaders != "" {
-			w.Header().Set("Access-Control-Allow-Headers", requestedHeaders)
-		} else {
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		}
-
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
 	logDebug("Received request: %s %s", r.Method, r.URL.Path)
 	// logDebug("Content-Type: %s", r.Header.Get("Content-Type"))
 
@@ -281,4 +263,89 @@ func returnCachedAnswer(w http.ResponseWriter, cachedAnswer string, model string
 	fmt.Fprintf(w, "data: %s\n\n", string(finishJSON))
 	fmt.Fprintf(w, "data: [DONE]\n\n")
 	flusher.Flush()
+}
+
+// Admin handlers
+func handleRedisCreate(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req map[string]interface{}
+	if err := BindJSON(r, &req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to parse request"})
+		return
+	}
+
+	alias, ok := req["alias"].(string)
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid alias type"})
+		return
+	}
+
+	token, err := authService.Create(alias)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		logError("Fail to create auth token: %w", err)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Fail to create auth token"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	logDebug("Created token: %s, alias: %s", token, alias)
+	json.NewEncoder(w).Encode(map[string]string{"token": token, "alias": alias})
+}
+
+func handleRedisGet(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req map[string]interface{}
+	if err := BindJSON(r, &req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to parse request"})
+		return
+	}
+
+	token, ok := req["token"].(string)
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid token type"})
+		return
+	}
+
+	valide, alias, err := authService.Get(token)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		logError("Fail to query token from auth service: %w", err)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Fail to query token"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{"valide": valide, "token": token, "alias": alias})
+}
+
+func handleRedisDelete(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req map[string]interface{}
+	if err := BindJSON(r, &req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to parse request"})
+		return
+	}
+
+	token, ok := req["token"].(string)
+	if !ok || token == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid or missing token"})
+		return
+	}
+
+	if err := authService.Delete(token); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		logError("Fail to delete token from auth service: %s", err)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Fail to delete token"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"token": token, "status": "deleted"})
 }
