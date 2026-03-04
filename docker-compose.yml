@@ -19,6 +19,18 @@ services:
     networks:
       - ai-net
   
+  redis:
+    image: redis:alpine
+    container_name: llm_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis_storage:/data:Z
+    restart: unless-stopped
+    networks:
+      - ai-net
+  
+  
   embedding-service:
     build:
       context: .
@@ -58,6 +70,20 @@ services:
       - COMPL_ENDPOINT=${COMPL_ENDPOINT}
     networks:
       - ai-net
+  
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./dockerfile/Dockerfile.auth
+    ports:
+      - "50054:50054"
+    environment:
+      - REDIS_ADDR=redis:6379
+      - REDIS_DB=${REDIS_DB:-0}
+    depends_on:
+      - redis
+    networks:
+      - ai-net
     
   gateway:
     build:
@@ -73,6 +99,7 @@ services:
     depends_on:
       - cache-service
       - completion-service
+      - auth-service
     networks:
       - ai-net
 

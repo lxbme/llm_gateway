@@ -11,15 +11,15 @@ COPY embedding ./embedding/
 COPY completion ./completion/
 COPY auth ./auth/
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /embedding-bin ./cmd/embedding
+RUN CGO_ENABLED=0 GOOS=linux go build -o /auth-bin ./cmd/auth
 
 FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
-COPY --from=builder /embedding-bin .
+COPY --from=builder /auth-bin .
 
-EXPOSE 50051
+EXPOSE 50052
 
-CMD [ "./embedding-bin" ]
+CMD [ "./auth-bin" ]

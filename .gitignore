@@ -1,3 +1,4 @@
 .env
 qdrant_storage
 benchmark
+redis_storage
