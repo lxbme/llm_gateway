@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: llm_qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage:Z
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    networks:
+      - ai-net
+
+  redis:
+    image: redis:alpine
+    container_name: llm_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis_storage:/data:Z
+    restart: unless-stopped
+    networks:
+      - ai-net
+
+  embedding-service:
+    image: ghcr.io/lxbme/llm-gateway-embedding-service:${IMAGE_TAG:-latest}
+    ports:
+      - "50051:50051"
+    environment:
+      - EMBED_API_KEY=${EMBED_API_KEY}
+      - EMBED_ENDPOINT=${EMBED_ENDPOINT}
+    networks:
+      - ai-net
+
+  cache-service:
+    image: ghcr.io/lxbme/llm-gateway-cache-service:${IMAGE_TAG:-latest}
+    ports:
+      - "50052:50052"
+    environment:
+      - EMBED_ADDR=embedding-service:50051
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6334
+    depends_on:
+      - embedding-service
+      - qdrant
+    restart: on-failure
+    networks:
+      - ai-net
+
+  completion-service:
+    image: ghcr.io/lxbme/llm-gateway-completion-service:${IMAGE_TAG:-latest}
+    ports:
+      - "50053:50053"
+    environment:
+      - COMPL_API_KEY=${COMPL_API_KEY}
+      - COMPL_ENDPOINT=${COMPL_ENDPOINT}
+    networks:
+      - ai-net
+
+  auth-service:
+    image: ghcr.io/lxbme/llm-gateway-auth-service:${IMAGE_TAG:-latest}
+    ports:
+      - "50054:50054"
+    environment:
+      - REDIS_ADDR=redis:6379
+      - REDIS_DB=${REDIS_DB:-0}
+    depends_on:
+      - redis
+    networks:
+      - ai-net
+
+  gateway:
+    image: ghcr.io/lxbme/llm-gateway-gateway:${IMAGE_TAG:-latest}
+    ports:
+      - "8080:8080"
+      - "127.0.0.1:8081:8081"
+    environment:
+      - CACHE_ADDR=cache-service:50052
+      - COMPL_ADDR=completion-service:50053
+      - AUTH_ADDR=auth-service:50054
+      - DEBUG_MODE=${DEBUG_MODE}
+      - LOG_LEVEL=${LOG_LEVEL:-ERROR}
+      - ADMIN_SECRET=${ADMIN_SECRET}
+    depends_on:
+      - cache-service
+      - completion-service
+      - auth-service
+    restart: on-failure
+    networks:
+      - ai-net
+
+networks:
+  ai-net:
+    driver: bridge
