@@ -31,7 +31,7 @@ A lightweight, OpenAI-compatible API gateway with semantic caching and token-bas
 ### 1. Clone and configure
 
 ```sh
-git clone <https://github.com/lxbme/llm_gateway.git
+git clone https://github.com/lxbme/llm_gateway.git
 cd llm_gateway
 cp .env.example .env
 # Edit .env with your API keys and endpoints
