@@ -40,9 +40,9 @@ cp .env.example .env
 ### 2. Start all services
 
 ```sh
-podman-compose up --build
+podman compose -f docker-compose.prod.yml up -d
 # or
-docker compose up --build
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ### 3. Create your first API token

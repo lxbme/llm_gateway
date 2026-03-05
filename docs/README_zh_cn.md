@@ -36,9 +36,9 @@ cp .env.example .env
 ### 2. 启动所有服务
 
 ```sh
-podman-compose up --build
+podman compose -f docker-compose.prod.yml up -d
 # 或者
-docker compose up --build
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ### 3. 创建您的第一个 API 令牌
