@@ -15,27 +15,11 @@ A lightweight, OpenAI-compatible API gateway with semantic caching and token-bas
 - **Microservice architecture** — each concern (embedding, cache, completion, auth) is a separate gRPC service, independently deployable and scalable
 - **CORS ready** — built-in CORS middleware for browser-based clients
 
-<!-- ## Architecture
+## Architecture
 
-```
-Client
-  │  Bearer sk-xxx
-  ▼
-Gateway (:8080)
-  ├── CORS Middleware
-  ├── Auth Middleware ──────────────► Auth Service (:50054)
-  │                                        └── Redis
-  ├── Semantic Cache (GET) ─────────► Cache Service (:50052)
-  │                                        ├── Embedding Service (:50051)
-  │                                        └── Qdrant (:6334)
-  └── Completion ──────────────────► Completion Service (:50053)
-                                          └── OpenAI-compatible API
+![Architecture-light](./docs/llm_gateway_struct_light.png#gh-light-mode-only)
 
-Admin API (:8081, localhost only)
-  ├── POST   /admin/create
-  ├── POST   /admin/get
-  └── POST   /admin/delete
-``` -->
+![Architecture-dark](./docs/llm_gateway_struct_dark.png#gh-dark-mode-only)
 
 ## Quick Start
 

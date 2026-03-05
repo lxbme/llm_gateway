@@ -11,27 +11,11 @@
 - **微服务架构** — 每个功能（嵌入、缓存、完成、认证）都是一个独立的 gRPC 服务，可独立部署和扩展
 - **CORS 支持** — 内置 CORS 中间件，支持基于浏览器的客户端
 
-<!-- ## 架构
+## 架构
 
-```
-客户端
-  │  Bearer sk-xxx
-  ▼
-网关 (:8080)
-  ├── CORS 中间件
-  ├── 认证中间件 ──────────────► 认证服务 (:50054)
-  │                                        └── Redis
-  ├── 语义缓存 (GET) ─────────► 缓存服务 (:50052)
-  │                                        ├── 嵌入服务 (:50051)
-  │                                        └── Qdrant (:6334)
-  └── 完成 ──────────────────► 完成服务 (:50053)
-                                          └── 兼容 OpenAI 的 API
+![Architecture-light](./docs/llm_gateway_struct_light.png#gh-light-mode-only)
 
-管理 API (:8081，仅限本地访问)
-  ├── POST   /admin/create
-  ├── POST   /admin/get
-  └── POST   /admin/delete
-``` -->
+![Architecture-dark](./docs/llm_gateway_struct_dark.png#gh-dark-mode-only)
 
 ## 快速开始
 
