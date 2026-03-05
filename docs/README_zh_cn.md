@@ -98,6 +98,11 @@ LOG_LEVEL=ERROR
 
 # 启用 pprof 性能分析端点
 DEBUG_MODE=false
+
+# 管理员 API 密钥 — 使用 /admin/* 端点所需。
+# 如果未设置，所有管理请求将被拒绝并返回 403 Forbidden。
+# 通过 X-Admin-Secret 请求头传递此值。
+ADMIN_SECRET=change-me-to-a-strong-random-secret
 ```
 
 ## 配置参考

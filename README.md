@@ -102,6 +102,11 @@ LOG_LEVEL=ERROR
 
 # Enable pprof profiling endpoint
 DEBUG_MODE=false
+
+# Admin API secret — REQUIRED to use /admin/* endpoints.
+# If unset, all admin requests will be rejected with 403 Forbidden.
+# Pass this value via the X-Admin-Secret request header.
+ADMIN_SECRET=change-me-to-a-strong-random-secret
 ```
 
 ## Configuration Reference
