@@ -87,6 +87,7 @@ func main() {
 	mux.Handle("/v1/chat/completions", Chain(
 		http.HandlerFunc(CompletionHandle),
 		CORSMiddleware,
+		GlobalRateLimitMiddleware,
 		AuthCheckMiddleware,
 	))
 

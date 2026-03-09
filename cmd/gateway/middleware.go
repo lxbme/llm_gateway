@@ -7,12 +7,24 @@ import (
 	"strings"
 
 	"llm_gateway/auth/redis"
+
+	"golang.org/x/time/rate"
 )
 
 const tokenPrefix = "sk"
 const tokenEntropyLen = 32
 
+// rate limit arguments
+const tokenGenSpeed = 100
+const tokenCapacity = 200
+const parallelCount = 50
+
 type Middleware func(http.Handler) http.Handler
+
+var (
+	rateLimiter       = rate.NewLimiter(rate.Limit(tokenGenSpeed), tokenCapacity)
+	parallelSemaphore = make(chan struct{}, parallelCount)
+)
 
 // Chain composes middlewares and wraps the final handler.
 // Middlewares are applied in the order they are passed (first = outermost).
@@ -88,6 +100,41 @@ func AuthCheckMiddleware(next http.Handler) http.Handler {
 		}
 		if !isValid {
 			authErrorJSON(w, "Invalid or revoked token")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func rateLimitErrorJSON(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	body, _ := json.Marshal(map[string]interface{}{
+		"error": map[string]string{
+			"message": message,
+			"type":    "server_busy",
+		},
+	})
+	w.Write(body)
+}
+
+func GlobalRateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// token bucket
+		if !rateLimiter.Allow() {
+			logWarn("Hit rate limit (token bucket)")
+			rateLimitErrorJSON(w, "rate limit exceeded")
+			return
+		}
+
+		// semaphore
+		select {
+		case parallelSemaphore <- struct{}{}:
+			defer func() { <-parallelSemaphore }()
+		default:
+			logWarn("Hit rate limit (semaphore)")
+			rateLimitErrorJSON(w, "rate limit exceeded")
 			return
 		}
 
