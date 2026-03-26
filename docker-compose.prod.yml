@@ -35,8 +35,11 @@ services:
     ports:
       - "50051:50051"
     environment:
+      - EMBED_PROVIDER=${EMBED_PROVIDER}
       - EMBED_API_KEY=${EMBED_API_KEY}
       - EMBED_ENDPOINT=${EMBED_ENDPOINT}
+      - EMBED_MODEL=${EMBED_MODEL}
+      - EMBED_DIMENSIONS=${EMBED_DIMENSIONS}
     networks:
       - ai-net
 

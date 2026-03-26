@@ -3,9 +3,11 @@ syntax = "proto3";
 package embedding;
 
 option go_package = "embedding/proto";
+import "google/protobuf/empty.proto";
 
 service EmbeddingService {
     rpc GetEmbedding(EmbeddingRequest) returns (EmbeddingResponse);
+    rpc Info(google.protobuf.Empty) returns (InfoResponse);
 }
 
 message EmbeddingRequest {
@@ -15,4 +17,10 @@ message EmbeddingRequest {
 message EmbeddingResponse {
     repeated float embedding = 1;
     string error = 2;
+}
+
+message InfoResponse {
+    string provider = 1;
+    string model = 2;
+    int32 dimensions = 3;
 }

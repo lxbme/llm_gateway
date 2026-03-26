@@ -7,32 +7,49 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+
+	"llm_gateway/embedding"
 )
 
 // Service implements embedding.Service using OpenAI API
 type Service struct {
 	endpoint   string
 	model      string
-	apiKeyEnv  string
+	apiKey     string
 	client     *http.Client
 	dimensions int
 }
 
+type Config struct {
+	Endpoint   string
+	Model      string
+	APIKey     string
+	Dimensions int
+}
+
 // New creates a new OpenAI embedding service
-func New(endpoint string, model string, apiKeyEnvName string, dimensions int) *Service {
+func New(cfg Config) *Service {
 	return &Service{
-		endpoint:   endpoint,
-		model:      model,
-		apiKeyEnv:  apiKeyEnvName,
+		endpoint:   cfg.Endpoint,
+		model:      cfg.Model,
+		apiKey:     cfg.APIKey,
 		client:     &http.Client{},
-		dimensions: dimensions,
+		dimensions: cfg.Dimensions,
 	}
 }
 
 // Get implements embedding.Service
 func (s *Service) Get(ctx context.Context, question string) ([]float32, error) {
 	return s.getEmbedding(question)
+}
+
+func (s *Service) Info(ctx context.Context) (embedding.Info, error) {
+	_ = ctx
+	return embedding.Info{
+		Provider:   "openai",
+		Model:      s.model,
+		Dimensions: s.dimensions,
+	}, nil
 }
 
 // getEmbedding gets embedding vector from OpenAI API
@@ -51,11 +68,7 @@ func (s *Service) getEmbedding(input string) ([]float32, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to create embedding request: %w", err)
 	}
-	apiKey := os.Getenv(s.apiKeyEnv)
-	if apiKey == "" {
-		return nil, fmt.Errorf("empty api key from env: %s", s.apiKeyEnv)
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 

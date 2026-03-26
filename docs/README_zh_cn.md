@@ -67,8 +67,11 @@ curl -s http://localhost:8080/v1/chat/completions \
 
 ```env
 # 嵌入服务
+EMBED_PROVIDER=openai
 EMBED_API_KEY=sk-your-embedding-api-key
 EMBED_ENDPOINT=https://api.openai.com/v1/embeddings
+EMBED_MODEL=text-embedding-3-small
+EMBED_DIMENSIONS=1536
 
 # 完成服务
 COMPL_API_KEY=sk-your-completion-api-key
@@ -105,8 +108,11 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 
 | 变量 | 默认值 | 描述 |
 |----------|---------|-------------|
+| `EMBED_PROVIDER` | — | **必填.** Embedding provider 名称，当前支持 `openai` |
 | `EMBED_API_KEY` | — | 嵌入提供商的 API 密钥 |
 | `EMBED_ENDPOINT` | — | **必填.** 嵌入 API 端点 URL |
+| `EMBED_MODEL` | — | **必填.** Embedding 模型名称 |
+| `EMBED_DIMENSIONS` | — | **必填.** 向量维度 |
 | `SERVE_PORT` | `50051` | gRPC 监听端口 |
 
 ### 缓存服务 (`cache-service`)

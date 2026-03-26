@@ -56,6 +56,7 @@ func New(bufferSize int, workerCount int, dimensions int,
 	err = s.createCollection()
 	if err != nil {
 		cancel()
+		qclient.Close()
 		return nil, fmt.Errorf("fail to create qdrant collection: %w", err)
 	}
 
@@ -145,12 +146,14 @@ func (s *Service) submit(task cache.Task) bool {
 }
 
 func (s *Service) createCollection() error {
-	isExist, err := s.qdrantClient.CollectionExists(context.Background(), s.collectionName)
+	ctx := context.Background()
+
+	isExist, err := s.qdrantClient.CollectionExists(ctx, s.collectionName)
 	if err != nil {
 		return fmt.Errorf("fail to check if collection %s exists: %w", s.collectionName, err)
 	}
 	if !isExist {
-		err = s.qdrantClient.CreateCollection(context.Background(), &qdrant.CreateCollection{
+		err = s.qdrantClient.CreateCollection(ctx, &qdrant.CreateCollection{
 			CollectionName: s.collectionName,
 			VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
 				Size:     uint64(s.dimensions),
@@ -161,8 +164,66 @@ func (s *Service) createCollection() error {
 			return fmt.Errorf("fail to create collection: %w", err)
 		}
 		fmt.Printf("[Info] Created Qdrant collection: %s\n", s.collectionName)
+		return nil
 	}
+
+	collectionInfo, err := s.qdrantClient.GetCollectionInfo(ctx, s.collectionName)
+	if err != nil {
+		return fmt.Errorf("fail to get collection %s info: %w", s.collectionName, err)
+	}
+
+	existingDimensions, err := getCollectionDimensions(collectionInfo)
+	if err != nil {
+		return fmt.Errorf("fail to inspect collection %s dimensions: %w", s.collectionName, err)
+	}
+
+	if existingDimensions != s.dimensions {
+		return fmt.Errorf(
+			"collection %s dimension mismatch: existing=%d expected=%d",
+			s.collectionName,
+			existingDimensions,
+			s.dimensions,
+		)
+	}
+
+	fmt.Printf("[Info] Reusing Qdrant collection: %s (dimensions=%d)\n", s.collectionName, existingDimensions)
 	return nil
+}
+
+func getCollectionDimensions(collectionInfo *qdrant.CollectionInfo) (int, error) {
+	if collectionInfo == nil {
+		return 0, fmt.Errorf("collection info is nil")
+	}
+
+	config := collectionInfo.GetConfig()
+	if config == nil {
+		return 0, fmt.Errorf("collection config is nil")
+	}
+
+	params := config.GetParams()
+	if params == nil {
+		return 0, fmt.Errorf("collection params are nil")
+	}
+
+	vectorsConfig := params.GetVectorsConfig()
+	if vectorsConfig == nil {
+		return 0, fmt.Errorf("collection vectors config is nil")
+	}
+
+	vectorParams := vectorsConfig.GetParams()
+	if vectorParams == nil {
+		if vectorsConfig.GetParamsMap() != nil {
+			return 0, fmt.Errorf("named vectors are not supported by current cache service")
+		}
+		return 0, fmt.Errorf("dense vector params are nil")
+	}
+
+	size := vectorParams.GetSize()
+	if size == 0 {
+		return 0, fmt.Errorf("collection vector size must be greater than 0")
+	}
+
+	return int(size), nil
 }
 
 func (s *Service) storeCache(embedded []float32, questionText string, answerText string, modelName string, tokenUsage int) error {

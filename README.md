@@ -71,8 +71,11 @@ curl -s http://localhost:8080/v1/chat/completions \
 
 ```env
 # Embedding service
+EMBED_PROVIDER=openai
 EMBED_API_KEY=sk-your-embedding-api-key
 EMBED_ENDPOINT=https://api.openai.com/v1/embeddings
+EMBED_MODEL=text-embedding-3-small
+EMBED_DIMENSIONS=1536
 
 # Completion service
 COMPL_API_KEY=sk-your-completion-api-key
@@ -109,8 +112,11 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `EMBED_PROVIDER` | — | **Required.** Embedding provider name, currently `openai` |
 | `EMBED_API_KEY` | — | API key for the embedding provider |
 | `EMBED_ENDPOINT` | — | **Required.** Embedding API endpoint URL |
+| `EMBED_MODEL` | — | **Required.** Embedding model name |
+| `EMBED_DIMENSIONS` | — | **Required.** Embedding vector dimensions |
 | `SERVE_PORT` | `50051` | gRPC listen port |
 
 ### Cache Service (`cache-service`)

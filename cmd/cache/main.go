@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -23,7 +24,7 @@ const qdrantCollectionName = "llm_semantic_cache"
 const qdrantCacheBufferSize = 1000
 const qdrantCacheWorkerSize = 5
 
-const embeddingDimensions = 1536
+// const embeddingDimensions = 1536
 
 func main() {
 	embeddingGrpcAddress := os.Getenv("EMBED_ADDR")
@@ -56,6 +57,18 @@ func main() {
 		return
 	}
 	defer embeddingService.Close()
+
+	log.Printf("[Info] Fetching embedding service info...")
+	embeddingInfo, err := embeddingService.Info(context.Background())
+	if err != nil {
+		log.Fatalf("Failed to get embedding service info: %v", err)
+	}
+	log.Printf("[Info] Connected embedding service: provider=%s, model=%s, dimensions=%d",
+		embeddingInfo.Provider,
+		embeddingInfo.Model,
+		embeddingInfo.Dimensions,
+	)
+	embeddingDimensions := embeddingInfo.Dimensions
 
 	cacheSvc, err := qdrant.New(
 		qdrantCacheBufferSize,

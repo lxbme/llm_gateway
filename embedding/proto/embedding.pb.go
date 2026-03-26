@@ -9,6 +9,7 @@ package proto
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -117,18 +118,85 @@ func (x *EmbeddingResponse) GetError() string {
 	return ""
 }
 
+type InfoResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	Model         string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
+	Dimensions    int32                  `protobuf:"varint,3,opt,name=dimensions,proto3" json:"dimensions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InfoResponse) Reset() {
+	*x = InfoResponse{}
+	mi := &file_embedding_proto_embedding_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InfoResponse) ProtoMessage() {}
+
+func (x *InfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_embedding_proto_embedding_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InfoResponse.ProtoReflect.Descriptor instead.
+func (*InfoResponse) Descriptor() ([]byte, []int) {
+	return file_embedding_proto_embedding_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *InfoResponse) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *InfoResponse) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *InfoResponse) GetDimensions() int32 {
+	if x != nil {
+		return x.Dimensions
+	}
+	return 0
+}
+
 var File_embedding_proto_embedding_proto protoreflect.FileDescriptor
 
 const file_embedding_proto_embedding_proto_rawDesc = "" +
 	"\n" +
-	"\x1fembedding/proto/embedding.proto\x12\tembedding\"&\n" +
+	"\x1fembedding/proto/embedding.proto\x12\tembedding\x1a\x1bgoogle/protobuf/empty.proto\"&\n" +
 	"\x10EmbeddingRequest\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"G\n" +
 	"\x11EmbeddingResponse\x12\x1c\n" +
 	"\tembedding\x18\x01 \x03(\x02R\tembedding\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error2]\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"`\n" +
+	"\fInfoResponse\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x14\n" +
+	"\x05model\x18\x02 \x01(\tR\x05model\x12\x1e\n" +
+	"\n" +
+	"dimensions\x18\x03 \x01(\x05R\n" +
+	"dimensions2\x96\x01\n" +
 	"\x10EmbeddingService\x12I\n" +
-	"\fGetEmbedding\x12\x1b.embedding.EmbeddingRequest\x1a\x1c.embedding.EmbeddingResponseB\x11Z\x0fembedding/protob\x06proto3"
+	"\fGetEmbedding\x12\x1b.embedding.EmbeddingRequest\x1a\x1c.embedding.EmbeddingResponse\x127\n" +
+	"\x04Info\x12\x16.google.protobuf.Empty\x1a\x17.embedding.InfoResponseB\x11Z\x0fembedding/protob\x06proto3"
 
 var (
 	file_embedding_proto_embedding_proto_rawDescOnce sync.Once
@@ -142,16 +210,20 @@ func file_embedding_proto_embedding_proto_rawDescGZIP() []byte {
 	return file_embedding_proto_embedding_proto_rawDescData
 }
 
-var file_embedding_proto_embedding_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_embedding_proto_embedding_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_embedding_proto_embedding_proto_goTypes = []any{
 	(*EmbeddingRequest)(nil),  // 0: embedding.EmbeddingRequest
 	(*EmbeddingResponse)(nil), // 1: embedding.EmbeddingResponse
+	(*InfoResponse)(nil),      // 2: embedding.InfoResponse
+	(*emptypb.Empty)(nil),     // 3: google.protobuf.Empty
 }
 var file_embedding_proto_embedding_proto_depIdxs = []int32{
 	0, // 0: embedding.EmbeddingService.GetEmbedding:input_type -> embedding.EmbeddingRequest
-	1, // 1: embedding.EmbeddingService.GetEmbedding:output_type -> embedding.EmbeddingResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	3, // 1: embedding.EmbeddingService.Info:input_type -> google.protobuf.Empty
+	1, // 2: embedding.EmbeddingService.GetEmbedding:output_type -> embedding.EmbeddingResponse
+	2, // 3: embedding.EmbeddingService.Info:output_type -> embedding.InfoResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -168,7 +240,7 @@ func file_embedding_proto_embedding_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_embedding_proto_embedding_proto_rawDesc), len(file_embedding_proto_embedding_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
