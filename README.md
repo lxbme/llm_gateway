@@ -48,14 +48,12 @@ docker compose -f docker-compose.prod.yml up -d
 ### 3. Create your first API token
 
 ```sh
-curl -s -X POST http://localhost:8081/admin/create \
-     -H "Content-Type: application/json" \
-     -d '{"alias": "my-user"}'
+bash -lc 'set -a; source test/cli/.env; set +a; curl -sS -X POST http://127.0.0.1:8081/admin/create -H "X-Admin-Secret: $ADMIN_SECRET" -H "Content-Type: application/json" -d "{\"alias\":\"manual-test\"}"'
 # Response: {"token":"sk_xxx","alias":"my-user"}
 ```
 
 ### 4. Make a request
-
+sk_xxx is obtained by running the previous command
 ```sh
 curl -s http://localhost:8080/v1/chat/completions \
      -H "Authorization: Bearer sk_xxx" \
@@ -63,7 +61,7 @@ curl -s http://localhost:8080/v1/chat/completions \
      -d '{
        "model": "gpt-4o-mini",
        "stream": true,
-       "messages": [{"role": "user", "content": "Hello!"}]
+       "messages": [{"role": "user", "content": "Hello! llm_gateway"}]
      }'
 ```
 
