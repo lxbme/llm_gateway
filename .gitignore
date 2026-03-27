@@ -2,3 +2,5 @@
 qdrant_storage
 benchmark
 redis_storage
+.cursor
+test/cli/.env
