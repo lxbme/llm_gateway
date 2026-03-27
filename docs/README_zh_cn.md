@@ -44,14 +44,12 @@ docker compose -f docker-compose.prod.yml up -d
 ### 3. 创建您的第一个 API 令牌
 
 ```sh
-curl -s -X POST http://localhost:8081/admin/create \
-     -H "Content-Type: application/json" \
-     -d '{"alias": "my-user"}'
+bash -lc 'set -a; source test/cli/.env; set +a; curl -sS -X POST http://127.0.0.1:8081/admin/create -H "X-Admin-Secret: $ADMIN_SECRET" -H "Content-Type: application/json" -d "{\"alias\":\"manual-test\"}"'
 # 响应: {"token":"sk_xxx","alias":"my-user"}
 ```
 
 ### 4. 发起请求
-
+sk_xxx 是运行上一个命令得到的
 ```sh
 curl -s http://localhost:8080/v1/chat/completions \
      -H "Authorization: Bearer sk_xxx" \
@@ -59,7 +57,7 @@ curl -s http://localhost:8080/v1/chat/completions \
      -d '{
        "model": "gpt-4o-mini",
        "stream": true,
-       "messages": [{"role": "user", "content": "Hello!"}]
+       "messages": [{"role": "user", "content": "Hello openai!"}]
      }'
 ```
 
