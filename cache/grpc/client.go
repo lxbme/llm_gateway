@@ -18,7 +18,7 @@ type Client struct {
 func NewClient(address string) (*Client, error) {
 	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to embedding service: %w", err)
+		return nil, fmt.Errorf("failed to connect to cache service: %w", err)
 	}
 
 	return &Client{
@@ -33,11 +33,11 @@ func (c *Client) Get(ctx context.Context, question string, model string) (string
 		Model:  model,
 	})
 	if err != nil {
-		return "", false, fmt.Errorf("failed to get embedding: %w", err)
+		return "", false, fmt.Errorf("failed to search similar vector: %w", err)
 	}
 
 	if resp.Error != "" {
-		return "", false, fmt.Errorf("embedding service error: %s", resp.Error)
+		return "", false, fmt.Errorf("cache service error: %s", resp.Error)
 	}
 
 	return resp.Answer, resp.IsHit, nil
