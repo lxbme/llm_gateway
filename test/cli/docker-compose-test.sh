@@ -14,7 +14,7 @@ TEST_REQUEST_COUNT="${TEST_REQUEST_COUNT:-3}"
 KEEP_SERVICES="${KEEP_SERVICES:-0}"
 
 log() {
-  printf '[test] %s\n' "$*"
+  printf '[test] %s\n' "$*" >&2
 }
 
 fail() {
@@ -164,7 +164,7 @@ wait_for_token_creation() {
 
 extract_token() {
   local response_body="${1}"
-  sed -n 's/.*"token":"\([^"]*\)".*/\1/p' <<<"${response_body}"
+  sed -n 's/.*"token":"\([^"]*\)".*/\1/p' <<<"${response_body}" | sed -n '1p'
 }
 
 delete_token() {
@@ -245,7 +245,7 @@ main() {
     log "Response status: ${gateway_status}"
     log "Response latency: ${elapsed_ms} ms"
     log "Response body:"
-    printf '%s\n' "${gateway_body}"
+    printf '%s\n' "${gateway_body}" >&2
 
     if [[ "${gateway_status}" != "200" ]]; then
       print_debug_info

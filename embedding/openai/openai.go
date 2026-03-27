@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strconv"
 
 	"llm_gateway/embedding"
 )
@@ -24,18 +26,48 @@ type Config struct {
 	Endpoint   string
 	Model      string
 	APIKey     string
-	Dimensions int
+	Dimensions string
+}
+
+func LoadConfigFromEnv() Config {
+	return Config{
+		Endpoint:   os.Getenv("EMBED_ENDPOINT"),
+		Model:      os.Getenv("EMBED_MODEL"),
+		APIKey:     os.Getenv("EMBED_API_KEY"),
+		Dimensions: os.Getenv("EMBED_DIMENSIONS"),
+	}
+}
+
+func NewFromEnv() (*Service, error) {
+	return New(LoadConfigFromEnv())
 }
 
 // New creates a new OpenAI embedding service
-func New(cfg Config) *Service {
+func New(cfg Config) (*Service, error) {
+	if cfg.Endpoint == "" {
+		return nil, fmt.Errorf("EMBED_ENDPOINT should not be blank")
+	}
+	if cfg.Model == "" {
+		return nil, fmt.Errorf("EMBED_MODEL should not be blank")
+	}
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("EMBED_API_KEY should not be blank")
+	}
+	if cfg.Dimensions == "" {
+		return nil, fmt.Errorf("EMBED_DIMENSIONS should not be blank")
+	}
+
+	dimInt, err := strconv.Atoi(cfg.Dimensions)
+	if err != nil {
+		return nil, fmt.Errorf("EMBED_DIMENSIONS must be a valid integer: %w", err)
+	}
 	return &Service{
 		endpoint:   cfg.Endpoint,
 		model:      cfg.Model,
 		apiKey:     cfg.APIKey,
 		client:     &http.Client{},
-		dimensions: cfg.Dimensions,
-	}
+		dimensions: dimInt,
+	}, nil
 }
 
 // Get implements embedding.Service
