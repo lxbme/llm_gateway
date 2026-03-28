@@ -75,6 +75,14 @@ EMBED_ENDPOINT=https://api.openai.com/v1/embeddings
 EMBED_MODEL=text-embedding-3-small
 EMBED_DIMENSIONS=1536
 
+# Cache service
+CACHE_MODE=semantic
+CACHE_STORE_PROVIDER=qdrant
+CACHE_BUFFER_SIZE=1000
+CACHE_WORKER_COUNT=5
+QDRANT_COLLECTION_NAME=llm_semantic_cache
+QDRANT_SIMILARITY_THRESHOLD=0.95
+
 # Completion service
 COMPL_API_KEY=sk-your-completion-api-key
 COMPL_ENDPOINT=https://api.openai.com/v1/chat/completions
@@ -121,10 +129,19 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `CACHE_MODE` | `semantic` | Cache mode. `semantic` requires an embedding service; `exact` is reserved for future exact-match stores |
+| `CACHE_STORE_PROVIDER` | — | **Required.** Store provider name, currently `qdrant` |
+| `CACHE_PROVIDER` | — | Backward-compatible alias for `CACHE_STORE_PROVIDER` |
+| `CACHE_BUFFER_SIZE` | `1000` | Async cache write queue capacity |
+| `CACHE_WORKER_COUNT` | `5` | Number of async cache workers |
 | `EMBED_ADDR` | `localhost:50051` | Embedding service gRPC address |
-| `QDRANT_HOST` | — | Qdrant hostname |
-| `QDRANT_PORT` | — | Qdrant gRPC port |
+| `QDRANT_HOST` | `localhost` | Qdrant hostname |
+| `QDRANT_PORT` | `6334` | Qdrant gRPC port |
+| `QDRANT_COLLECTION_NAME` | `llm_semantic_cache` | Qdrant collection used by the semantic cache |
+| `QDRANT_SIMILARITY_THRESHOLD` | `0.95` | Minimum cosine similarity score required for a cache hit |
 | `SERVE_PORT` | `50052` | gRPC listen port |
+
+`cache-service` now selects its backend using `CACHE_MODE + CACHE_STORE_PROVIDER`. In the current implementation only `semantic + qdrant` is available. When `CACHE_MODE=semantic`, `EMBED_ADDR` must point to a reachable embedding service so the cache can generate vectors before searching or writing.
 
 ### Completion Service (`completion-service`)
 

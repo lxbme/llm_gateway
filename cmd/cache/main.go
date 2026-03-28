@@ -6,80 +6,59 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
 
+	"llm_gateway/cache"
+	"llm_gateway/cache/factory"
 	cachegrpc "llm_gateway/cache/grpc"
 	pb "llm_gateway/cache/proto"
-	"llm_gateway/cache/qdrant"
 	embeddingGrpc "llm_gateway/embedding/grpc"
 
 	"google.golang.org/grpc"
 )
 
-const qdrantSimilarityThreshold = 0.95
-const qdrantCollectionName = "llm_semantic_cache"
-
-// const qdrantClientPort = 6334
-// const qdrantHost = "localhost"
-const qdrantCacheBufferSize = 1000
-const qdrantCacheWorkerSize = 5
-
-// const embeddingDimensions = 1536
-
 func main() {
-	embeddingGrpcAddress := os.Getenv("EMBED_ADDR")
-	if embeddingGrpcAddress == "" {
-		embeddingGrpcAddress = "localhost:50051"
-	}
-
 	servePort := os.Getenv("SERVE_PORT")
 	if servePort == "" {
 		servePort = "50052"
 	}
 
-	qdrantHost := os.Getenv("QDRANT_HOST")
-	if qdrantHost == "" {
-		qdrantHost = "localhost"
-	}
-
-	qdrantClientPortStr := os.Getenv("QDRANT_PORT")
-	if qdrantClientPortStr == "" {
-		qdrantClientPortStr = "6334"
-	}
-	qdrantClientPort, err := strconv.Atoi(qdrantClientPortStr)
+	cfg, err := cache.LoadConfigFromEnv()
 	if err != nil {
-		log.Fatalf("Invalid QDRANT_PORT: %v", err)
+		log.Fatalf("Failed to load cache config: %v", err)
 	}
 
-	embeddingService, err := embeddingGrpc.NewClient(embeddingGrpcAddress)
-	if err != nil {
-		fmt.Printf("[Error] Failed to create embedding client: %s\n", err)
-		return
-	}
-	defer embeddingService.Close()
+	deps := factory.Dependencies{}
+	var embeddingClient *embeddingGrpc.Client
 
-	log.Printf("[Info] Fetching embedding service info...")
-	embeddingInfo, err := embeddingService.Info(context.Background())
-	if err != nil {
-		log.Fatalf("Failed to get embedding service info: %v", err)
-	}
-	log.Printf("[Info] Connected embedding service: provider=%s, model=%s, dimensions=%d",
-		embeddingInfo.Provider,
-		embeddingInfo.Model,
-		embeddingInfo.Dimensions,
-	)
-	embeddingDimensions := embeddingInfo.Dimensions
+	if cfg.Mode == cache.ModeSemantic {
+		embeddingGrpcAddress := os.Getenv("EMBED_ADDR")
+		if embeddingGrpcAddress == "" {
+			embeddingGrpcAddress = "localhost:50051"
+		}
 
-	cacheSvc, err := qdrant.New(
-		qdrantCacheBufferSize,
-		qdrantCacheWorkerSize,
-		embeddingDimensions,
-		float32(qdrantSimilarityThreshold),
-		qdrantCollectionName,
-		qdrantHost,
-		qdrantClientPort,
-		embeddingService,
-	)
+		embeddingClient, err = embeddingGrpc.NewClient(embeddingGrpcAddress)
+		if err != nil {
+			fmt.Printf("[Error] Failed to create embedding client: %s\n", err)
+			return
+		}
+		defer embeddingClient.Close()
+
+		log.Printf("[Info] Fetching embedding service info...")
+		embeddingInfo, err := embeddingClient.Info(context.Background())
+		if err != nil {
+			log.Fatalf("Failed to get embedding service info: %v", err)
+		}
+		log.Printf("[Info] Connected embedding service: provider=%s, model=%s, dimensions=%d",
+			embeddingInfo.Provider,
+			embeddingInfo.Model,
+			embeddingInfo.Dimensions,
+		)
+
+		deps.Embedding = embeddingClient
+		deps.Dimensions = embeddingInfo.Dimensions
+	}
+
+	cacheSvc, err := factory.New(cfg, deps)
 	if err != nil {
 		log.Fatalf("Failed to create cache service: %v", err)
 	}

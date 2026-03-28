@@ -53,9 +53,15 @@ services:
     ports:
       - "50052:50052"
     environment:
+      - CACHE_MODE=${CACHE_MODE:-semantic}
+      - CACHE_STORE_PROVIDER=${CACHE_STORE_PROVIDER:-qdrant}
+      - CACHE_BUFFER_SIZE=${CACHE_BUFFER_SIZE:-1000}
+      - CACHE_WORKER_COUNT=${CACHE_WORKER_COUNT:-5}
       - EMBED_ADDR=embedding-service:50051
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6334
+      - QDRANT_COLLECTION_NAME=${QDRANT_COLLECTION_NAME:-llm_semantic_cache}
+      - QDRANT_SIMILARITY_THRESHOLD=${QDRANT_SIMILARITY_THRESHOLD:-0.95}
     depends_on:
       - embedding-service
       - qdrant

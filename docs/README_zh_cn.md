@@ -71,6 +71,14 @@ EMBED_ENDPOINT=https://api.openai.com/v1/embeddings
 EMBED_MODEL=text-embedding-3-small
 EMBED_DIMENSIONS=1536
 
+# 缓存服务
+CACHE_MODE=semantic
+CACHE_STORE_PROVIDER=qdrant
+CACHE_BUFFER_SIZE=1000
+CACHE_WORKER_COUNT=5
+QDRANT_COLLECTION_NAME=llm_semantic_cache
+QDRANT_SIMILARITY_THRESHOLD=0.95
+
 # 完成服务
 COMPL_API_KEY=sk-your-completion-api-key
 COMPL_ENDPOINT=https://api.openai.com/v1/chat/completions
@@ -117,10 +125,19 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 
 | 变量 | 默认值 | 描述 |
 |----------|---------|-------------|
+| `CACHE_MODE` | `semantic` | 缓存模式。`semantic` 需要 embedding 服务；`exact` 预留给未来的精确匹配存储 |
+| `CACHE_STORE_PROVIDER` | — | **必填.** 底层 store provider 名称，当前支持 `qdrant` |
+| `CACHE_PROVIDER` | — | `CACHE_STORE_PROVIDER` 的兼容别名 |
+| `CACHE_BUFFER_SIZE` | `1000` | 异步缓存写入队列容量 |
+| `CACHE_WORKER_COUNT` | `5` | 异步缓存 worker 数量 |
 | `EMBED_ADDR` | `localhost:50051` | 嵌入服务 gRPC 地址 |
-| `QDRANT_HOST` | — | Qdrant 主机名 |
-| `QDRANT_PORT` | — | Qdrant gRPC 端口 |
+| `QDRANT_HOST` | `localhost` | Qdrant 主机名 |
+| `QDRANT_PORT` | `6334` | Qdrant gRPC 端口 |
+| `QDRANT_COLLECTION_NAME` | `llm_semantic_cache` | 语义缓存使用的 Qdrant collection 名称 |
+| `QDRANT_SIMILARITY_THRESHOLD` | `0.95` | 判定缓存命中的最小余弦相似度阈值 |
 | `SERVE_PORT` | `50052` | gRPC 监听端口 |
+
+`cache-service` 现在通过 `CACHE_MODE + CACHE_STORE_PROVIDER` 选择底层实现。当前版本只实现了 `semantic + qdrant`。当 `CACHE_MODE=semantic` 时，`EMBED_ADDR` 必须指向可用的 embedding 服务，缓存服务会先生成向量，再执行查询或写入。
 
 ### 完成服务 (`completion-service`)
 
