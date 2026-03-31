@@ -1,4 +1,4 @@
-package main
+package gateway
 
 type ChatCompleteionRequest struct {
 	Model       string    `json:"model"`

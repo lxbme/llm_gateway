@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"context"
@@ -11,6 +11,12 @@ import (
 	"llm_gateway/cache"
 	"llm_gateway/completion"
 )
+
+type Dependencies struct {
+	Auth       auth.Service
+	Cache      cache.Service
+	Completion completion.Service
+}
 
 type GatewayContext struct {
 	Context   context.Context
@@ -25,7 +31,7 @@ type GatewayContext struct {
 	Response ResponseState
 	Runtime  RuntimeState
 
-	Services GatewayServices
+	Services Dependencies
 	Data     map[string]any
 }
 
@@ -81,12 +87,6 @@ type RuntimeState struct {
 	ParallelSlotAcquired bool
 }
 
-type GatewayServices struct {
-	Auth       auth.Service
-	Cache      cache.Service
-	Completion completion.Service
-}
-
 type DirectResponseKind string
 
 const (
@@ -104,7 +104,7 @@ type DirectResponse struct {
 	Model        string
 }
 
-func NewGatewayContext(w http.ResponseWriter, r *http.Request, services GatewayServices) *GatewayContext {
+func newGatewayContext(w http.ResponseWriter, r *http.Request, services Dependencies) *GatewayContext {
 	return &GatewayContext{
 		Context:   r.Context(),
 		RequestID: newRequestID(),
@@ -128,7 +128,7 @@ func NewGatewayContext(w http.ResponseWriter, r *http.Request, services GatewayS
 	}
 }
 
-func BuildPromptText(messages []Message) string {
+func buildPromptText(messages []Message) string {
 	var builder strings.Builder
 	for _, message := range messages {
 		if message.Content == "" {

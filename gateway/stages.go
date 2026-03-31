@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"encoding/json"
@@ -168,7 +168,7 @@ func handlePromptBuildStage(gw *GatewayContext) StageResult {
 		return StageResult{Action: ActionReject, StatusCode: http.StatusBadRequest, Message: "request body not decoded"}
 	}
 
-	gw.Request.PromptText = BuildPromptText(gw.Request.Chat.Messages)
+	gw.Request.PromptText = buildPromptText(gw.Request.Chat.Messages)
 	gw.Request.NormalizedKey = gw.Request.PromptText
 	gw.Route.Model = gw.Request.Chat.Model
 
@@ -291,7 +291,7 @@ func handleAuditLogStage(gw *GatewayContext) StageResult {
 	if answerText == "" && gw.Response.DirectResponse != nil && gw.Response.DirectResponse.Kind == DirectResponseCachedStream {
 		answerText = gw.Response.DirectResponse.CachedAnswer
 	}
-	PrintDialog(gw.Request.PromptText, answerText)
+	printDialog(gw.Request.PromptText, answerText)
 	return StageResult{Action: ActionContinue}
 }
 

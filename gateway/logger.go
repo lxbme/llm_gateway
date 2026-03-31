@@ -1,11 +1,10 @@
-package main
+package gateway
 
 import (
 	"fmt"
 	"os"
 )
 
-// LogLevel defines the logging level
 type LogLevel int
 
 const (
@@ -18,7 +17,6 @@ const (
 var currentLogLevel LogLevel
 
 func init() {
-	// Set log level from environment variable
 	level := os.Getenv("LOG_LEVEL")
 	switch level {
 	case "DEBUG":
@@ -30,7 +28,7 @@ func init() {
 	case "ERROR":
 		currentLogLevel = LogLevelError
 	default:
-		currentLogLevel = LogLevelError // Production default: only errors
+		currentLogLevel = LogLevelError
 	}
 }
 

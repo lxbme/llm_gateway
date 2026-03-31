@@ -1,4 +1,4 @@
-package main
+package gateway
 
 type StageName string
 

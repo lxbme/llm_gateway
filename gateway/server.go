@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"encoding/json"
@@ -10,24 +10,34 @@ import (
 	"llm_gateway/completion"
 )
 
-var gatewayPipeline = defaultGatewayPipeline()
+type Server struct {
+	services Dependencies
+	pipeline *Pipeline
+}
 
-func CompletionHandle(w http.ResponseWriter, r *http.Request) {
+func NewServer(services Dependencies) *Server {
+	return &Server{
+		services: services,
+		pipeline: defaultGatewayPipeline(),
+	}
+}
+
+func (s *Server) RegisterPublicRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/v1/chat/completions", s.CompletionHandler)
+}
+
+func (s *Server) CompletionHandler(w http.ResponseWriter, r *http.Request) {
 	logDebug("Received request: %s %s", r.Method, r.URL.Path)
 
-	gw := NewGatewayContext(w, r, GatewayServices{
-		Auth:       authService,
-		Cache:      semanticCacheService,
-		Completion: completionService,
-	})
-	defer finishGatewayRequest(gw)
+	gw := newGatewayContext(w, r, s.services)
+	defer s.finishGatewayRequest(gw)
 
-	if result, terminal := runPreUpstreamStages(gw); terminal {
-		writeTerminalStageResponse(gw, result)
+	if result, terminal := s.runPreUpstreamStages(gw); terminal {
+		s.writeTerminalStageResponse(gw, result)
 		return
 	}
 
-	chunks, err := gw.Services.Completion.GetStream(gw.Context, gw.Upstream.Request)
+	chunks, err := s.services.Completion.GetStream(gw.Context, gw.Upstream.Request)
 	if err != nil {
 		logError("Failed to get stream: %s", err)
 		gw.Upstream.Error = err
@@ -35,7 +45,7 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 			http.StatusBadGateway,
 			map[string]string{"error": "Failed to get stream"},
 		)
-		writeTerminalStageResponse(gw, StageResult{
+		s.writeTerminalStageResponse(gw, StageResult{
 			Action:     ActionReject,
 			StatusCode: http.StatusBadGateway,
 			Message:    "Failed to get stream",
@@ -44,13 +54,13 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := streamUpstreamResponse(gw, chunks); err != nil {
+	if err := s.streamUpstreamResponse(gw, chunks); err != nil {
 		if !gw.Response.StreamStarted {
 			gw.Response.DirectResponse = newJSONDirectResponse(
 				http.StatusInternalServerError,
 				map[string]string{"error": err.Error()},
 			)
-			writeTerminalStageResponse(gw, StageResult{
+			s.writeTerminalStageResponse(gw, StageResult{
 				Action:     ActionReject,
 				StatusCode: http.StatusInternalServerError,
 				Message:    err.Error(),
@@ -60,14 +70,14 @@ func CompletionHandle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func runPreUpstreamStages(gw *GatewayContext) (StageResult, bool) {
+func (s *Server) runPreUpstreamStages(gw *GatewayContext) (StageResult, bool) {
 	stages := []StageName{
 		StageRequestReceived,
 		StageRequestDecoded,
 		StageBeforeUpstream,
 	}
 	for _, stage := range stages {
-		result, terminal := gatewayPipeline.RunStage(stage, gw)
+		result, terminal := s.pipeline.RunStage(stage, gw)
 		if terminal {
 			return result, true
 		}
@@ -75,15 +85,15 @@ func runPreUpstreamStages(gw *GatewayContext) (StageResult, bool) {
 	return StageResult{Action: ActionContinue}, false
 }
 
-func finishGatewayRequest(gw *GatewayContext) {
-	gatewayPipeline.RunStage(StageResponseComplete, gw)
+func (s *Server) finishGatewayRequest(gw *GatewayContext) {
+	s.pipeline.RunStage(StageResponseComplete, gw)
 	if gw.Runtime.ParallelSlotAcquired {
 		<-parallelSemaphore
 		gw.Runtime.ParallelSlotAcquired = false
 	}
 }
 
-func writeTerminalStageResponse(gw *GatewayContext, result StageResult) {
+func (s *Server) writeTerminalStageResponse(gw *GatewayContext, result StageResult) {
 	if gw.Response.DirectResponse == nil {
 		statusCode := result.StatusCode
 		if statusCode == 0 {
@@ -96,10 +106,10 @@ func writeTerminalStageResponse(gw *GatewayContext, result StageResult) {
 		gw.Response.DirectResponse = newJSONDirectResponse(statusCode, map[string]string{"error": message})
 	}
 
-	writeDirectResponse(gw)
+	s.writeDirectResponse(gw)
 }
 
-func writeDirectResponse(gw *GatewayContext) {
+func (s *Server) writeDirectResponse(gw *GatewayContext) {
 	direct := gw.Response.DirectResponse
 	if direct == nil {
 		return
@@ -125,7 +135,7 @@ func writeDirectResponse(gw *GatewayContext) {
 	}
 }
 
-func streamUpstreamResponse(gw *GatewayContext, chunks <-chan *completion.CompletionChunk) error {
+func (s *Server) streamUpstreamResponse(gw *GatewayContext, chunks <-chan *completion.CompletionChunk) error {
 	setSSEHeaders(gw.Response.Writer, gw.Response.Header)
 
 	flusher, ok := gw.Response.Writer.(http.Flusher)
@@ -147,7 +157,7 @@ func streamUpstreamResponse(gw *GatewayContext, chunks <-chan *completion.Comple
 
 		gw.Stream.CurrentChunk = chunk
 		gw.Stream.ChunkIndex++
-		_, _ = gatewayPipeline.RunStage(StageStreamChunk, gw)
+		_, _ = s.pipeline.RunStage(StageStreamChunk, gw)
 
 		if chunk.Error != nil {
 			break
@@ -202,7 +212,7 @@ func streamUpstreamResponse(gw *GatewayContext, chunks <-chan *completion.Comple
 	return gw.Upstream.Error
 }
 
-func PrintDialog(userText string, answerText string) {
+func printDialog(userText string, answerText string) {
 	if currentLogLevel < LogLevelDebug {
 		return
 	}
@@ -217,7 +227,6 @@ func PrintDialog(userText string, answerText string) {
 	fmt.Printf("ai: %.100s...\n", answerText)
 }
 
-// returnCachedAnswer simulate sse
 func returnCachedAnswer(w http.ResponseWriter, cachedAnswer string, model string) {
 	setSSEHeaders(w, nil)
 
@@ -227,11 +236,8 @@ func returnCachedAnswer(w http.ResponseWriter, cachedAnswer string, model string
 		return
 	}
 
-	// generate dialog id
 	chatID := fmt.Sprintf("chatcmpl-cached-%d", time.Now().UnixNano())
 	createdTime := time.Now().Unix()
-
-	// split cache answer
 	chunkSize := 20
 	runes := []rune(cachedAnswer)
 
@@ -242,7 +248,6 @@ func returnCachedAnswer(w http.ResponseWriter, cachedAnswer string, model string
 		}
 		chunk := string(runes[i:end])
 
-		// make response
 		response := ChatStreamResponse{
 			Choices: []struct {
 				Delta struct {
@@ -261,13 +266,10 @@ func returnCachedAnswer(w http.ResponseWriter, cachedAnswer string, model string
 		}
 
 		jsonBytes, _ := json.Marshal(response)
-		fmt.Fprintf(w, "data: %s\n\n", string(jsonBytes))
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", string(jsonBytes))
 		flusher.Flush()
-
-		// time.Sleep(10 * time.Millisecond)
 	}
 
-	// stop
 	finishResponse := map[string]interface{}{
 		"id":      chatID,
 		"object":  "chat.completion.chunk",
@@ -282,8 +284,8 @@ func returnCachedAnswer(w http.ResponseWriter, cachedAnswer string, model string
 		},
 	}
 	finishJSON, _ := json.Marshal(finishResponse)
-	fmt.Fprintf(w, "data: %s\n\n", string(finishJSON))
-	fmt.Fprintf(w, "data: [DONE]\n\n")
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", string(finishJSON))
+	_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
 	flusher.Flush()
 }
 
@@ -323,89 +325,4 @@ func mergeHeaders(dst http.Header, src http.Header) {
 			dst.Add(key, value)
 		}
 	}
-}
-
-// Admin handlers
-func handleRedisCreate(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	var req map[string]interface{}
-	if err := BindJSON(r, &req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to parse request"})
-		return
-	}
-
-	alias, ok := req["alias"].(string)
-	if !ok {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid alias type"})
-		return
-	}
-
-	token, err := authService.Create(alias)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		logError("Fail to create auth token: %w", err)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Fail to create auth token"})
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	logDebug("Created token: %s, alias: %s", token, alias)
-	json.NewEncoder(w).Encode(map[string]string{"token": token, "alias": alias})
-}
-
-func handleRedisGet(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	var req map[string]interface{}
-	if err := BindJSON(r, &req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to parse request"})
-		return
-	}
-
-	token, ok := req["token"].(string)
-	if !ok {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid token type"})
-		return
-	}
-
-	valide, alias, err := authService.Get(token)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		logError("Fail to query token from auth service: %w", err)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Fail to query token"})
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{"valide": valide, "token": token, "alias": alias})
-}
-
-func handleRedisDelete(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	var req map[string]interface{}
-	if err := BindJSON(r, &req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to parse request"})
-		return
-	}
-
-	token, ok := req["token"].(string)
-	if !ok || token == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid or missing token"})
-		return
-	}
-
-	if err := authService.Delete(token); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		logError("Fail to delete token from auth service: %s", err)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Fail to delete token"})
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"token": token, "status": "deleted"})
 }
