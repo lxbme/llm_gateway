@@ -84,12 +84,7 @@ func main() {
 
 	// completion handler
 	mux := http.NewServeMux()
-	mux.Handle("/v1/chat/completions", Chain(
-		http.HandlerFunc(CompletionHandle),
-		CORSMiddleware,
-		GlobalRateLimitMiddleware,
-		AuthCheckMiddleware,
-	))
+	mux.HandleFunc("/v1/chat/completions", CompletionHandle)
 
 	// Register pprof handlers
 	if debugMode == "true" {
