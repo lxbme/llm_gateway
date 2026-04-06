@@ -95,6 +95,26 @@ services:
     networks:
       - ai-net
     
+  rag-service:
+    build:
+      context: .
+      dockerfile: ./dockerfile/Dockerfile.rag
+    ports:
+      - "50055:50055"
+    environment:
+      - EMBED_ADDR=embedding-service:50051
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6334
+      - QDRANT_COLLECTION_NAME=${RAG_QDRANT_COLLECTION_NAME:-llm_rag_documents}
+      - RAG_SIMILARITY_THRESHOLD=${RAG_SIMILARITY_THRESHOLD:-0.6}
+      - RAG_DEFAULT_TOP_K=${RAG_DEFAULT_TOP_K:-3}
+    depends_on:
+      - embedding-service
+      - qdrant
+    restart: on-failure
+    networks:
+      - ai-net
+
   gateway:
     build:
       context: .
@@ -106,6 +126,7 @@ services:
       - CACHE_ADDR=cache-service:50052
       - COMPL_ADDR=completion-service:50053
       - AUTH_ADDR=auth-service:50054
+      - RAG_ADDR=rag-service:50055
       - DEBUG_MODE=${DEBUG_MODE}
       - LOG_LEVEL=${LOG_LEVEL:-ERROR}
       - ADMIN_SECRET=${ADMIN_SECRET}
@@ -113,6 +134,7 @@ services:
       - cache-service
       - completion-service
       - auth-service
+      - rag-service
     restart: on-failure
     networks:
       - ai-net

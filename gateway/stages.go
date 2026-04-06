@@ -19,6 +19,7 @@ func defaultGatewayPipeline() *Pipeline {
 		newStageHandler("request_decode_handler", []StageName{StageRequestDecoded}, handleRequestDecodeStage),
 		newStageHandler("prompt_build_handler", []StageName{StageRequestDecoded}, handlePromptBuildStage),
 		newStageHandler("auth_validate_handler", []StageName{StageBeforeUpstream}, handleAuthValidateStage),
+		newStageHandler("rag_retrieve_handler", []StageName{StageBeforeUpstream}, handleRAGRetrieveStage),
 		newStageHandler("mock_response_handler", []StageName{StageBeforeUpstream}, handleMockResponseStage),
 		newStageHandler("cache_lookup_handler", []StageName{StageBeforeUpstream}, handleCacheLookupStage),
 		newStageHandler("upstream_request_build_handler", []StageName{StageBeforeUpstream}, handleUpstreamBuildStage),
@@ -270,6 +271,14 @@ func handleStreamChunkStage(gw *GatewayContext) StageResult {
 
 func handleCacheWritebackStage(gw *GatewayContext) StageResult {
 	if gw.Response.FromCache || gw.Upstream.Error != nil || gw.Stream.FullAnswer.Len() == 0 {
+		return StageResult{Action: ActionContinue}
+	}
+
+	// Skip caching when the response was RAG-augmented: the retrieved context
+	// depends on external documents that can be added or deleted at any time,
+	// so caching such responses would return stale answers after document changes.
+	if count, ok := gw.Data["rag_chunks_count"].(int); ok && count > 0 {
+		logDebug("Skipping cache write: response was RAG-augmented (%d chunks)", count)
 		return StageResult{Action: ActionContinue}
 	}
 

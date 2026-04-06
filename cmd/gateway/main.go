@@ -11,6 +11,7 @@ import (
 	cacheGrpc "llm_gateway/cache/grpc"
 	completionGrpc "llm_gateway/completion/grpc"
 	"llm_gateway/gateway"
+	ragGrpc "llm_gateway/rag/grpc"
 )
 
 const serverPort = 8080
@@ -58,11 +59,26 @@ func main() {
 	}
 	defer authSvc.Close()
 
-	gatewayServer := gateway.NewServer(gateway.Dependencies{
+	deps := gateway.Dependencies{
 		Auth:       authSvc,
 		Cache:      cacheSvc,
 		Completion: completionSvc,
-	})
+	}
+
+	// RAG service is optional: omit RAG_ADDR to run without it.
+	ragGrpcAddress := os.Getenv("RAG_ADDR")
+	if ragGrpcAddress != "" {
+		ragSvc, err := ragGrpc.NewClient(ragGrpcAddress)
+		if err != nil {
+			log.Printf("[Error] Fail to init RAG service: %s", err)
+			return
+		}
+		defer ragSvc.Close()
+		deps.RAG = ragSvc
+		log.Printf("[Info] RAG service connected: %s", ragGrpcAddress)
+	}
+
+	gatewayServer := gateway.NewServer(deps)
 
 	mux := http.NewServeMux()
 	gatewayServer.RegisterPublicRoutes(mux)

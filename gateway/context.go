@@ -10,12 +10,14 @@ import (
 	"llm_gateway/auth"
 	"llm_gateway/cache"
 	"llm_gateway/completion"
+	"llm_gateway/rag"
 )
 
 type Dependencies struct {
 	Auth       auth.Service
 	Cache      cache.Service
 	Completion completion.Service
+	RAG        rag.Service // nil = RAG disabled
 }
 
 type GatewayContext struct {

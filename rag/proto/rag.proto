@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package rag;
+
+option go_package = "rag/proto";
+
+import "google/protobuf/empty.proto";
+
+service RagService {
+    // Ingest document chunks: generate embeddings and store in vector DB
+    rpc Ingest(IngestRequest) returns (IngestResponse);
+
+    // Retrieve top-K semantically similar chunks for a query
+    rpc Retrieve(RetrieveRequest) returns (RetrieveResponse);
+
+    // Delete all chunks belonging to a document
+    rpc DeleteDoc(DeleteDocRequest) returns (google.protobuf.Empty);
+}
+
+message Chunk {
+    string chunk_id     = 1;
+    string doc_id       = 2;
+    string collection   = 3;
+    string content      = 4;
+    string source       = 5;
+    int32  chunk_index  = 6;
+    int32  total_chunks = 7;
+}
+
+message IngestRequest {
+    repeated Chunk chunks = 1;
+}
+
+message IngestResponse {
+    int32  ingested_count = 1;
+    string doc_id         = 2;
+    string error          = 3;
+}
+
+message RetrieveRequest {
+    string query      = 1;
+    string collection = 2;
+    int32  top_k      = 3;
+    float  threshold  = 4;
+}
+
+message RetrievedChunk {
+    string chunk_id = 1;
+    string content  = 2;
+    string source   = 3;
+    float  score    = 4;
+}
+
+message RetrieveResponse {
+    repeated RetrievedChunk chunks = 1;
+    string error                   = 2;
+}
+
+message DeleteDocRequest {
+    string doc_id     = 1;
+    string collection = 2;
+}

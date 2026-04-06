@@ -4,15 +4,16 @@
 [English](README.md) | [中文](docs/README_zh_cn.md)
 
 
-A lightweight, OpenAI-compatible API gateway with semantic caching and token-based authentication. Drop-in replacement for the OpenAI API endpoint — just point your existing client to this gateway.
+A lightweight, OpenAI-compatible API gateway with semantic caching, RAG (Retrieval-Augmented Generation), and token-based authentication. Drop-in replacement for the OpenAI API endpoint — just point your existing client to this gateway.
 
 ## Features
 
 - **OpenAI API compatible** — works with any client that supports the OpenAI Chat Completions API (`/v1/chat/completions`)
 - **Semantic caching** — uses vector similarity search (Qdrant) to serve cached responses for semantically equivalent prompts, significantly reducing upstream API calls and latency
+- **RAG (Retrieval-Augmented Generation)** — optional knowledge-base injection: upload document chunks via the admin API and the gateway automatically retrieves relevant context and prepends it to every prompt
 - **Token-based auth** — `sk-xxx` style API keys stored in Redis, with format validation (CRC32 checksum) before any network lookup
 - **Streaming support** — full SSE streaming passthrough and cached-response streaming simulation
-- **Microservice architecture** — each concern (embedding, cache, completion, auth) is a separate gRPC service, independently deployable and scalable
+- **Microservice architecture** — each concern (embedding, cache, completion, auth, rag) is a separate gRPC service, independently deployable and scalable
 - **CORS ready** — built-in CORS middleware for browser-based clients
 
 ## Architecture
@@ -80,12 +81,18 @@ CACHE_MODE=semantic
 CACHE_STORE_PROVIDER=qdrant
 CACHE_BUFFER_SIZE=1000
 CACHE_WORKER_COUNT=5
-QDRANT_COLLECTION_NAME=llm_semantic_cache
 QDRANT_SIMILARITY_THRESHOLD=0.95
+# QDRANT_COLLECTION_NAME defaults to llm_semantic_cache for the cache service
 
 # Completion service
 COMPL_API_KEY=sk-your-completion-api-key
 COMPL_ENDPOINT=https://api.openai.com/v1/chat/completions
+
+# RAG service (optional — leave RAG_ADDR empty to disable RAG entirely)
+# RAG_ADDR=localhost:50055
+# RAG_SIMILARITY_THRESHOLD=0.6   # default 0.6
+# RAG_DEFAULT_TOP_K=3            # default 3
+# QDRANT_COLLECTION_NAME defaults to llm_rag_documents for the rag service
 
 # Redis auth DB index
 REDIS_DB=0
@@ -111,6 +118,7 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 | `CACHE_ADDR` | `localhost:50052` | Cache service gRPC address |
 | `COMPL_ADDR` | `localhost:50053` | Completion service gRPC address |
 | `AUTH_ADDR` | `localhost:50054` | Auth service gRPC address |
+| `RAG_ADDR` | `""` | RAG service gRPC address. Leave empty to disable RAG. |
 | `LOG_LEVEL` | `ERROR` | Log verbosity: `DEBUG`, `INFO`, `ERROR` |
 | `DEBUG_MODE` | `false` | Set `true` to enable `/debug/pprof/*` endpoints |
 
@@ -151,6 +159,18 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 | `COMPL_ENDPOINT` | — | **Required.** Chat completions API endpoint URL |
 | `SERVE_PORT` | `50053` | gRPC listen port |
 
+### RAG Service (`rag-service`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMBED_ADDR` | `localhost:50051` | Embedding service gRPC address |
+| `QDRANT_HOST` | `localhost` | Qdrant hostname |
+| `QDRANT_PORT` | `6334` | Qdrant gRPC port |
+| `QDRANT_COLLECTION_NAME` | `llm_rag_documents` | Qdrant collection for RAG chunks (separate from the cache collection) |
+| `RAG_SIMILARITY_THRESHOLD` | `0.6` | Minimum cosine similarity for a chunk to be retrieved |
+| `RAG_DEFAULT_TOP_K` | `3` | Maximum number of chunks returned per query |
+| `SERVE_PORT` | `50055` | gRPC listen port |
+
 ### Auth Service (`auth-service`)
 
 | Variable | Default | Description |
@@ -161,6 +181,100 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 | `SERVE_PORT` | `50054` | gRPC listen port |
 
 ***REDIS_ADDR** is pointing to redis docker in default docker compose file.* 
+
+## RAG (Retrieval-Augmented Generation)
+
+The gateway ships an optional `rag-service` that lets you upload a knowledge base and have relevant document chunks automatically injected into every LLM prompt.
+
+### How it works
+
+```
+User request
+  └─ [Gateway: StageBeforeUpstream]
+       ├─ auth_validate_handler   ← verify token, resolve alias
+       ├─ rag_retrieve_handler    ← query rag-service for top-K chunks
+       │     └─ augment PromptText with retrieved context
+       ├─ cache_lookup_handler    ← operate on the augmented prompt
+       └─ upstream_request_build_handler
+```
+
+The RAG handler is a **soft dependency**: if `RAG_ADDR` is not set, or if retrieval returns no results, the request proceeds normally without any modification.
+
+### Knowledge-base isolation
+
+Document chunks are stored in a single Qdrant collection (`llm_rag_documents`) with a `collection` payload field used as a filter. Each request selects its knowledge base via:
+
+1. **`X-RAG-Collection` request header** — explicit collection name (takes priority)
+2. **Token alias** — falls back to the alias of the authenticated token (per-user knowledge base)
+
+### Starting the RAG service
+
+```sh
+# environment variables
+EMBED_ADDR=localhost:50051
+QDRANT_HOST=localhost
+QDRANT_PORT=6334
+QDRANT_COLLECTION_NAME=llm_rag_documents
+RAG_SIMILARITY_THRESHOLD=0.6
+RAG_DEFAULT_TOP_K=3
+SERVE_PORT=50055
+
+go run ./cmd/rag
+```
+
+Then tell the gateway where to find it:
+
+```sh
+RAG_ADDR=localhost:50055 go run ./cmd/gateway
+```
+
+### Uploading documents
+
+Split your document into text chunks and POST them to the admin API:
+
+```sh
+curl -X POST http://localhost:8081/admin/rag/ingest \
+     -H "X-Admin-Secret: your-secret" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "collection": "alice",
+       "source":     "docs/product-faq.md",
+       "chunks": [
+         {"content": "Our refund policy is 30 days...", "chunk_index": 0, "total_chunks": 3},
+         {"content": "To request a refund, email...",   "chunk_index": 1, "total_chunks": 3},
+         {"content": "Refunds are processed within...", "chunk_index": 2, "total_chunks": 3}
+       ]
+     }'
+# Response: {"doc_id":"<uuid>","ingested_count":3}
+```
+
+### Making a RAG-enabled request
+
+```sh
+curl -s http://localhost:8080/v1/chat/completions \
+     -H "Authorization: Bearer sk_xxx" \
+     -H "X-RAG-Collection: alice" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "model": "gpt-4o-mini",
+       "stream": true,
+       "messages": [{"role": "user", "content": "What is your refund policy?"}]
+     }'
+```
+
+The gateway retrieves the top-3 matching chunks from the `alice` collection and prepends them to the prompt before calling the LLM.
+
+### Deleting a document
+
+```sh
+curl -X DELETE http://localhost:8081/admin/rag/doc \
+     -H "X-Admin-Secret: your-secret" \
+     -H "Content-Type: application/json" \
+     -d '{"doc_id": "<uuid>", "collection": "alice"}'
+# Response: 204 No Content
+```
+
+---
 
 ## Admin API
 
@@ -175,11 +289,20 @@ curl -s -X POST http://localhost:8081/admin/create \
      -d '{"alias": "alice"}'
 ```
 
+**Token management**
+
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
 | `POST` | `/admin/create` | `{"alias": "name"}` | Generate a new `sk_xxx` token |
 | `POST` | `/admin/get` | `{"token": "sk_xxx"}` | Look up a token's validity and alias |
 | `POST` | `/admin/delete` | `{"token": "sk_xxx"}` | Revoke a token |
+
+**RAG knowledge-base management**
+
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| `POST` | `/admin/rag/ingest` | `{"collection","source","chunks":[...]}` | Ingest document chunks into a collection |
+| `DELETE` | `/admin/rag/doc` | `{"doc_id","collection"}` | Delete all chunks of a document |
 
 ### Gateway admin configuration
 

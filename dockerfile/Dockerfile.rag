@@ -6,22 +6,18 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY cmd ./cmd/
-COPY cache ./cache/
 COPY embedding ./embedding/
-COPY completion ./completion/
-COPY auth ./auth/
-COPY gateway ./gateway/
 COPY rag ./rag/
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /gateway-bin ./cmd/gateway
+RUN CGO_ENABLED=0 GOOS=linux go build -o /rag-bin ./cmd/rag
 
 FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
-COPY --from=builder /gateway-bin .
+COPY --from=builder /rag-bin .
 
-EXPOSE 8080
+EXPOSE 50055
 
-CMD [ "./gateway-bin" ]
+CMD [ "./rag-bin" ]
