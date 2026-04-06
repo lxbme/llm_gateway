@@ -32,6 +32,8 @@ jobs:
             dockerfile: dockerfile/Dockerfile.completion
           - service: auth-service
             dockerfile: dockerfile/Dockerfile.auth
+          - service: rag-service
+            dockerfile: dockerfile/Dockerfile.rag
 
     steps:
       - name: Checkout repository
