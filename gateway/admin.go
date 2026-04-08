@@ -3,7 +3,9 @@ package gateway
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
+	"github.com/google/uuid"
 	"llm_gateway/rag"
 )
 
@@ -18,6 +20,7 @@ func (s *Server) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/get", s.handleRedisGet)
 	mux.HandleFunc("POST /admin/delete", s.handleRedisDelete)
 	mux.HandleFunc("POST /admin/rag/ingest", s.handleRAGIngest)
+	mux.HandleFunc("POST /admin/rag/ingest/text", s.handleRAGIngestText)
 	mux.HandleFunc("DELETE /admin/rag/doc", s.handleRAGDeleteDoc)
 }
 
@@ -172,6 +175,116 @@ func (s *Server) handleRAGIngest(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{"doc_id": docID, "ingested_count": count})
+}
+
+// handleRAGIngestText accepts raw plain text (or Markdown), auto-chunks it
+// server-side, and queues the chunks for async ingestion. Returns immediately.
+//
+// Request body:
+//
+//	{
+//	  "collection":    "team-a",
+//	  "source":        "docs/faq.md",
+//	  "text":          "...plain text or markdown...",
+//	  "chunk_size":    500,
+//	  "chunk_overlap": 50
+//	}
+//
+// Response (202 Accepted):
+//
+//	{"job_id":"uuid","collection":"team-a","status":"queued","chunk_count":12}
+func (s *Server) handleRAGIngestText(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if s.services.RAG == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "RAG service not configured"})
+		return
+	}
+
+	var req struct {
+		Collection   string `json:"collection"`
+		Source       string `json:"source"`
+		Text         string `json:"text"`
+		ChunkSize    int    `json:"chunk_size"`
+		ChunkOverlap int    `json:"chunk_overlap"`
+	}
+	if err := bindJSON(r, &req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Failed to parse request"})
+		return
+	}
+	if req.Collection == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "collection is required"})
+		return
+	}
+	if strings.TrimSpace(req.Text) == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "text must not be empty"})
+		return
+	}
+
+	if req.ChunkSize <= 0 {
+		req.ChunkSize = 500
+	}
+	if req.ChunkOverlap < 0 {
+		req.ChunkOverlap = 50
+	}
+
+	contents := rag.ChunkText(req.Text, req.ChunkSize, req.ChunkOverlap)
+	if len(contents) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "text produced zero chunks after processing"})
+		return
+	}
+	total := int32(len(contents))
+
+	ragChunks := make([]rag.Chunk, len(contents))
+	for i, content := range contents {
+		ragChunks[i] = rag.Chunk{
+			Collection:  req.Collection,
+			Content:     content,
+			Source:      req.Source,
+			ChunkIndex:  int32(i),
+			TotalChunks: total,
+		}
+	}
+
+	jobID := uuid.New().String()
+	job := &ingestJob{
+		JobID:      jobID,
+		Collection: req.Collection,
+		Source:     req.Source,
+		Status:     ingestJobQueued,
+		ChunkCount: len(contents),
+	}
+	s.ingestWorker.mu.Lock()
+	s.ingestWorker.jobs[jobID] = job
+	s.ingestWorker.mu.Unlock()
+
+	task := ingestTask{
+		jobID:  jobID,
+		chunks: ragChunks,
+	}
+	if !s.ingestWorker.submit(task) {
+		s.ingestWorker.mu.Lock()
+		job.Status = ingestJobFailed
+		job.Err = "worker queue full"
+		s.ingestWorker.mu.Unlock()
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "ingest queue is full, try again later"})
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"job_id":      jobID,
+		"collection":  req.Collection,
+		"status":      string(ingestJobQueued),
+		"chunk_count": len(contents),
+	})
 }
 
 // handleRAGDeleteDoc deletes all chunks of a document from the RAG vector store.

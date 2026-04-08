@@ -79,6 +79,7 @@ func main() {
 	}
 
 	gatewayServer := gateway.NewServer(deps)
+	defer gatewayServer.Shutdown()
 
 	mux := http.NewServeMux()
 	gatewayServer.RegisterPublicRoutes(mux)

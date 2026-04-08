@@ -4,3 +4,4 @@ benchmark
 redis_storage
 .cursor
 test/cli/.env
+.claude

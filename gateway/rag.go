@@ -42,11 +42,11 @@ func handleRAGRetrieveStage(gw *GatewayContext) StageResult {
 
 	// Inject retrieved context before the user prompt.
 	var sb strings.Builder
-	sb.WriteString("以下是相关参考资料，请优先基于这些资料回答：\n\n")
+	sb.WriteString("The following are relevant reference materials; please prioritize basing your response on these sources:\n\n")
 	for i, chunk := range chunks {
-		sb.WriteString(fmt.Sprintf("[%d] (来源: %s)\n%s\n\n", i+1, chunk.Source, chunk.Content))
+		sb.WriteString(fmt.Sprintf("[%d] (Source: %s)\n%s\n\n", i+1, chunk.Source, chunk.Content))
 	}
-	sb.WriteString("---\n\n用户问题：\n")
+	sb.WriteString("---\n\nUser Prompt：\n")
 	sb.WriteString(gw.Request.PromptText)
 
 	gw.Request.PromptText = sb.String()

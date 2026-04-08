@@ -11,14 +11,31 @@ import (
 )
 
 type Server struct {
-	services Dependencies
-	pipeline *Pipeline
+	services     Dependencies
+	pipeline     *Pipeline
+	ingestWorker *ingestWorkerPool // nil when RAG service is disabled
 }
 
+const (
+	ingestWorkerBufferSize = 64
+	ingestWorkerCount      = 2
+)
+
 func NewServer(services Dependencies) *Server {
-	return &Server{
+	s := &Server{
 		services: services,
 		pipeline: defaultGatewayPipeline(),
+	}
+	if services.RAG != nil {
+		s.ingestWorker = newIngestWorkerPool(services.RAG, ingestWorkerBufferSize, ingestWorkerCount)
+	}
+	return s
+}
+
+// Shutdown performs graceful cleanup of background workers. Call on process exit.
+func (s *Server) Shutdown() {
+	if s.ingestWorker != nil {
+		s.ingestWorker.Shutdown()
 	}
 }
 

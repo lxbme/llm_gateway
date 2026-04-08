@@ -230,7 +230,26 @@ RAG_ADDR=localhost:50055 go run ./cmd/gateway
 
 ### Uploading documents
 
-Split your document into text chunks and POST them to the admin API:
+**Option A — Raw text (recommended):** POST plain text or Markdown. The gateway auto-chunks it in the background and returns immediately.
+
+```sh
+curl -X POST http://localhost:8081/admin/rag/ingest/text \
+     -H "X-Admin-Secret: your-secret" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "collection":    "alice",
+       "source":        "docs/product-faq.md",
+       "text":          "# Refund Policy\n\nOur refund policy is 30 days...\n\nTo request a refund, email support@example.com.\n\nRefunds are processed within 5 business days.",
+       "chunk_size":    500,
+       "chunk_overlap": 50
+     }'
+# Response (202 Accepted, immediate):
+# {"job_id":"<uuid>","collection":"alice","status":"queued","chunk_count":3}
+```
+
+The `chunk_size` (default 500) and `chunk_overlap` (default 50) fields are optional. Chunking is Markdown-aware: headings always start a new chunk, paragraphs are merged up to `chunk_size` runes, and sentence boundaries are preferred for splits. The actual embedding + vector storage happens asynchronously in the background.
+
+**Option B — Pre-chunked (advanced):** Supply chunks you have already split yourself. Ingestion is synchronous and returns only after all chunks are stored.
 
 ```sh
 curl -X POST http://localhost:8081/admin/rag/ingest \
@@ -301,7 +320,8 @@ curl -s -X POST http://localhost:8081/admin/create \
 
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
-| `POST` | `/admin/rag/ingest` | `{"collection","source","chunks":[...]}` | Ingest document chunks into a collection |
+| `POST` | `/admin/rag/ingest/text` | `{"collection","source","text","chunk_size","chunk_overlap"}` | Ingest raw text/Markdown — auto-chunked, **async** (202) |
+| `POST` | `/admin/rag/ingest` | `{"collection","source","chunks":[...]}` | Ingest pre-chunked content, synchronous |
 | `DELETE` | `/admin/rag/doc` | `{"doc_id","collection"}` | Delete all chunks of a document |
 
 ### Gateway admin configuration
