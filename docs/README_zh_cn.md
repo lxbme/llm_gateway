@@ -167,7 +167,7 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 | `QDRANT_HOST` | `localhost` | Qdrant 主机名 |
 | `QDRANT_PORT` | `6334` | Qdrant gRPC 端口 |
 | `QDRANT_COLLECTION_NAME` | `llm_rag_documents` | RAG 文档使用的 Qdrant collection（与缓存 collection 独立） |
-| `RAG_SIMILARITY_THRESHOLD` | `0.6` | 文档块被检索的最低余弦相似度 |
+| `RAG_SIMILARITY_THRESHOLD` | `0.6` | 文档块被检索的最低余弦相似度。设为 `0` 可完全禁用相似度过滤（任何匹配 collection 的文档块都会被返回，仍受 `RAG_DEFAULT_TOP_K` 限制） |
 | `RAG_DEFAULT_TOP_K` | `3` | 每次查询最多返回的文档块数 |
 | `SERVE_PORT` | `50055` | gRPC 监听端口 |
 
@@ -292,6 +292,19 @@ curl -X DELETE http://localhost:8081/admin/rag/doc \
      -d '{"doc_id": "<uuid>", "collection": "alice"}'
 # 响应: 204 No Content
 ```
+
+### 调试检索
+
+如果发现 RAG 上下文始终没有被注入到 LLM 回复中，把网关的 `LOG_LEVEL` 设为 `DEBUG`，每个请求会打印：
+
+- `RAG: resolved collection="<name>" from <source>` — 实际查询使用的 collection 名以及它的来源（`X-RAG-Collection header` 或 `Auth.Subject (token alias)`）。
+- `RAG: retrieve returned 0 chunks for collection="<name>"` — 命中数为 0 时输出。最常见的原因是 ingest 时使用的 `collection` 名与查询时解析出的名字不一致。
+
+当网关已配置 RAG 但无法解析任何 collection（既没有 `X-RAG-Collection` header，**且**当前 token 也没有别名）时，会输出 warning 并跳过检索。
+
+实例：如果 ingest 时使用 `collection: "mr"`，但请求所用 token 的别名是 `test_token`，网关会去查询 collection `test_token` 而无任何命中。两种解决方式：在请求上加 `-H "X-RAG-Collection: mr"`，或用 token 别名重新 ingest 一次。
+
+如需完全绕过分数过滤来验证问题，可以把 `rag-service` 的 `RAG_SIMILARITY_THRESHOLD` 设为 `0` 后重启 — 启动日志会显示 `threshold=0.0000`，qdrant 查询将跳过 score filter，便于确认问题是否出在 collection 过滤。
 
 ---
 

@@ -5,9 +5,9 @@ services:
     image: qdrant/qdrant:latest
     container_name: llm_qdrant
     ports:
-      - "6333:6333" 
+      - "6333:6333"
       - "6334:6334"
-    volumes: 
+    volumes:
       - ./qdrant_storage:/qdrant/storage:Z
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
@@ -16,6 +16,20 @@ services:
       nofile:
         soft: 65535
         hard: 65535
+    networks:
+      - ai-net
+
+  qdrant-ready:
+    image: busybox:latest
+    command: sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://qdrant:6333/healthz >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+    depends_on:
+      - qdrant
     networks:
       - ai-net
   
@@ -47,7 +61,7 @@ services:
       - ai-net
 
   cache-service:
-    build: 
+    build:
       context: .
       dockerfile: ./dockerfile/Dockerfile.cache
     ports:
@@ -63,8 +77,10 @@ services:
       - QDRANT_COLLECTION_NAME=${QDRANT_COLLECTION_NAME:-llm_semantic_cache}
       - QDRANT_SIMILARITY_THRESHOLD=${QDRANT_SIMILARITY_THRESHOLD:-0.95}
     depends_on:
-      - embedding-service
-      - qdrant
+      embedding-service:
+        condition: service_started
+      qdrant-ready:
+        condition: service_healthy
     restart: on-failure
     networks:
       - ai-net
@@ -109,8 +125,10 @@ services:
       - RAG_SIMILARITY_THRESHOLD=${RAG_SIMILARITY_THRESHOLD:-0.6}
       - RAG_DEFAULT_TOP_K=${RAG_DEFAULT_TOP_K:-3}
     depends_on:
-      - embedding-service
-      - qdrant
+      embedding-service:
+        condition: service_started
+      qdrant-ready:
+        condition: service_healthy
     restart: on-failure
     networks:
       - ai-net

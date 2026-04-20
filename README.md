@@ -167,7 +167,7 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 | `QDRANT_HOST` | `localhost` | Qdrant hostname |
 | `QDRANT_PORT` | `6334` | Qdrant gRPC port |
 | `QDRANT_COLLECTION_NAME` | `llm_rag_documents` | Qdrant collection for RAG chunks (separate from the cache collection) |
-| `RAG_SIMILARITY_THRESHOLD` | `0.6` | Minimum cosine similarity for a chunk to be retrieved |
+| `RAG_SIMILARITY_THRESHOLD` | `0.6` | Minimum cosine similarity for a chunk to be retrieved. Set to `0` to disable score filtering entirely (every chunk passing the collection filter is returned, up to `RAG_DEFAULT_TOP_K`) |
 | `RAG_DEFAULT_TOP_K` | `3` | Maximum number of chunks returned per query |
 | `SERVE_PORT` | `50055` | gRPC listen port |
 
@@ -292,6 +292,19 @@ curl -X DELETE http://localhost:8081/admin/rag/doc \
      -d '{"doc_id": "<uuid>", "collection": "alice"}'
 # Response: 204 No Content
 ```
+
+### Debugging retrieval
+
+If RAG context never seems to appear in the LLM's answers, set `LOG_LEVEL=DEBUG` on the gateway. Each request will emit:
+
+- `RAG: resolved collection="<name>" from <source>` — the collection name the gateway will query, plus its source (`X-RAG-Collection header` or `Auth.Subject (token alias)`).
+- `RAG: retrieve returned 0 chunks for collection="<name>"` — emitted when the query found nothing. The most common cause is a mismatch between the `collection` field used at ingest time and the name resolved at query time.
+
+When the gateway has RAG configured but cannot resolve any collection (no `X-RAG-Collection` header **and** no token alias), it emits a warning and skips retrieval.
+
+Worked example: if you ingested with `collection: "mr"` but the request's token alias is `test_token`, the gateway will look up collection `test_token` and find nothing. Either pass `-H "X-RAG-Collection: mr"` on the request, or re-ingest using the token alias as the collection name.
+
+To verify with no score filtering at all, restart `rag-service` with `RAG_SIMILARITY_THRESHOLD=0`. The startup log will show `threshold=0.0000` and the qdrant query will skip the score filter entirely — useful to confirm the collection filter is the actual blocker.
 
 ---
 

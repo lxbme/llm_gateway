@@ -44,12 +44,19 @@ func main() {
 		embeddingInfo.Dimensions,
 	)
 
-	store, err := ragQdrant.NewFromEnv(embeddingInfo.Dimensions)
+	cfg, err := ragQdrant.LoadConfigFromEnv()
+	if err != nil {
+		log.Fatalf("[Error] Failed to load RAG config: %s", err)
+	}
+
+	store, err := ragQdrant.New(cfg, embeddingInfo.Dimensions)
 	if err != nil {
 		log.Fatalf("[Error] Failed to create RAG qdrant store: %s", err)
 	}
 
-	ragSvc, err := rag.NewService(store, embeddingClient)
+	log.Printf("[Info] RAG config: topK=%d, threshold=%.4f", cfg.DefaultTopK, cfg.SimilarityThreshold)
+
+	ragSvc, err := rag.NewService(store, embeddingClient, int32(cfg.DefaultTopK), cfg.SimilarityThreshold)
 	if err != nil {
 		log.Fatalf("[Error] Failed to create RAG service: %s", err)
 	}

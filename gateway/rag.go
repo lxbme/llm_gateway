@@ -21,22 +21,26 @@ func handleRAGRetrieveStage(gw *GatewayContext) StageResult {
 		return StageResult{Action: ActionContinue}
 	}
 
-	// Determine the logical knowledge-base collection.
-	// X-RAG-Collection header takes priority; falls back to the token alias.
 	collection := gw.Request.Header.Get("X-RAG-Collection")
+	collectionSource := "X-RAG-Collection header"
 	if collection == "" {
 		collection = gw.Auth.Subject
+		collectionSource = "Auth.Subject (token alias)"
 	}
 	if collection == "" {
+		logWarn("RAG: configured but no collection resolvable for this request (no X-RAG-Collection header, no token alias) — skipping retrieve")
 		return StageResult{Action: ActionContinue}
 	}
 
-	chunks, err := gw.Services.RAG.Retrieve(gw.Context, gw.Request.PromptText, collection, 3, 0.6)
+	logDebug("RAG: resolved collection=%q from %s", collection, collectionSource)
+
+	chunks, err := gw.Services.RAG.Retrieve(gw.Context, gw.Request.PromptText, collection, 0, 0)
 	if err != nil {
-		logWarn("RAG retrieve failed (degrading gracefully): %s", err)
+		logWarn("RAG retrieve failed (degrading gracefully) collection=%q: %s", collection, err)
 		return StageResult{Action: ActionContinue}
 	}
 	if len(chunks) == 0 {
+		logDebug("RAG: retrieve returned 0 chunks for collection=%q — verify ingest used the same collection name", collection)
 		return StageResult{Action: ActionContinue}
 	}
 

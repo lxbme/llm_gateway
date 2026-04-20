@@ -11,20 +11,30 @@ import (
 
 // ServiceImpl implements the RAG Service interface.
 type ServiceImpl struct {
-	store     Store
-	embedding embedding.Service
+	store            Store
+	embedding        embedding.Service
+	defaultTopK      int32
+	defaultThreshold float32
 }
 
-func NewService(store Store, embeddingService embedding.Service) (*ServiceImpl, error) {
+func NewService(store Store, embeddingService embedding.Service, defaultTopK int32, defaultThreshold float32) (*ServiceImpl, error) {
 	if store == nil {
 		return nil, fmt.Errorf("store is required")
 	}
 	if embeddingService == nil {
 		return nil, fmt.Errorf("embedding service is required")
 	}
+	if defaultTopK <= 0 {
+		defaultTopK = 3
+	}
+	if defaultThreshold < 0 {
+		defaultThreshold = 0.6
+	}
 	return &ServiceImpl{
-		store:     store,
-		embedding: embeddingService,
+		store:            store,
+		embedding:        embeddingService,
+		defaultTopK:      defaultTopK,
+		defaultThreshold: defaultThreshold,
 	}, nil
 }
 
@@ -74,10 +84,10 @@ func (s *ServiceImpl) Ingest(ctx context.Context, chunks []Chunk) (string, int, 
 // Retrieve returns the top-K semantically similar chunks for a query.
 func (s *ServiceImpl) Retrieve(ctx context.Context, query string, collection string, topK int32, threshold float32) ([]RetrievedChunk, error) {
 	if topK <= 0 {
-		topK = 3
+		topK = s.defaultTopK
 	}
 	if threshold <= 0 {
-		threshold = 0.6
+		threshold = s.defaultThreshold
 	}
 
 	vector, err := s.embedding.Get(ctx, query)

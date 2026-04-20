@@ -102,12 +102,7 @@ func (s *Store) Query(ctx context.Context, task rag.QueryTask) ([]rag.RetrievedC
 		limit = 3
 	}
 
-	threshold := task.Threshold
-	if threshold <= 0 {
-		threshold = 0.6
-	}
-
-	results, err := s.qdrantClient.Query(ctx, &qdrant.QueryPoints{
+	queryPoints := &qdrant.QueryPoints{
 		CollectionName: s.collectionName,
 		Query:          qdrant.NewQueryDense(task.Vector),
 		Filter: &qdrant.Filter{
@@ -115,10 +110,14 @@ func (s *Store) Query(ctx context.Context, task rag.QueryTask) ([]rag.RetrievedC
 				qdrant.NewMatch("collection", task.Collection),
 			},
 		},
-		WithPayload:    qdrant.NewWithPayload(true),
-		ScoreThreshold: qdrant.PtrOf(threshold),
-		Limit:          qdrant.PtrOf(limit),
-	})
+		WithPayload: qdrant.NewWithPayload(true),
+		Limit:       qdrant.PtrOf(limit),
+	}
+	if task.Threshold > 0 {
+		queryPoints.ScoreThreshold = qdrant.PtrOf(task.Threshold)
+	}
+
+	results, err := s.qdrantClient.Query(ctx, queryPoints)
 	if err != nil {
 		return nil, fmt.Errorf("fail to query qdrant: %w", err)
 	}

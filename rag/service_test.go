@@ -66,7 +66,7 @@ func (m *mockEmbedding) Info(_ context.Context) (embedding.Info, error) {
 
 func newService(t *testing.T, store rag.Store, emb embedding.Service) *rag.ServiceImpl {
 	t.Helper()
-	svc, err := rag.NewService(store, emb)
+	svc, err := rag.NewService(store, emb, 3, 0.6)
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
@@ -76,14 +76,14 @@ func newService(t *testing.T, store rag.Store, emb embedding.Service) *rag.Servi
 // ---- NewService tests ----
 
 func TestNewService_NilStore(t *testing.T) {
-	_, err := rag.NewService(nil, &mockEmbedding{})
+	_, err := rag.NewService(nil, &mockEmbedding{}, 3, 0.6)
 	if err == nil {
 		t.Fatal("expected error for nil store, got nil")
 	}
 }
 
 func TestNewService_NilEmbedding(t *testing.T) {
-	_, err := rag.NewService(&mockStore{}, nil)
+	_, err := rag.NewService(&mockStore{}, nil, 3, 0.6)
 	if err == nil {
 		t.Fatal("expected error for nil embedding, got nil")
 	}
@@ -254,6 +254,8 @@ func TestRetrieve_DefaultsApplied(t *testing.T) {
 	svc := newService(t, store, &mockEmbedding{})
 
 	// Pass zero values: service should apply defaults internally.
+	// gateway/rag.go is the only real caller and always passes 0,0 — so the
+	// service-side default (driven by RAG_SIMILARITY_THRESHOLD env) must kick in.
 	_, err := svc.Retrieve(context.Background(), "test", "col", 0, 0)
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
@@ -267,6 +269,26 @@ func TestRetrieve_DefaultsApplied(t *testing.T) {
 	}
 	if q.Threshold != 0.6 {
 		t.Errorf("Threshold default: got %f, want 0.6", q.Threshold)
+	}
+}
+
+// When the operator configures defaultThreshold=0 (RAG_SIMILARITY_THRESHOLD=0),
+// the service must propagate 0 to the store, where it signals "skip score filter".
+func TestRetrieve_ZeroDefaultThreshold_PropagatesAsZero(t *testing.T) {
+	store := &mockStore{}
+	svc, err := rag.NewService(store, &mockEmbedding{}, 3, 0)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	if _, err := svc.Retrieve(context.Background(), "test", "col", 0, 0); err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if len(store.queryCalls) == 0 {
+		t.Fatal("no query calls recorded")
+	}
+	if got := store.queryCalls[0].Threshold; got != 0 {
+		t.Errorf("Threshold: got %f, want 0 (env=0 must reach store as 0)", got)
 	}
 }
 
