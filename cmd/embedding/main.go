@@ -1,27 +1,27 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"llm_gateway/embedding"
 	"llm_gateway/embedding/factory"
 	embeddinggrpc "llm_gateway/embedding/grpc"
+	"llm_gateway/internal/discovery"
 
 	pb "llm_gateway/embedding/proto"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-// const (
-// 	// grpcPort                = 50051
-// 	// openaiEmbeddingEndpoint = "https://api.openai-proxy.org/v1/embeddings"
-// 	embeddingModel         = "text-embedding-3-small"
-// 	embeddingDimensions    = 1536
-// 	embeddingApiKeyEnvName = "EMBED_API_KEY"
-// )
+const serviceName = "embedding"
 
 func main() {
 	servePort := os.Getenv("SERVE_PORT")
@@ -47,7 +47,34 @@ func main() {
 	s := grpc.NewServer()
 	pb.RegisterEmbeddingServiceServer(s, embeddinggrpc.NewServer(svc))
 
-	fmt.Printf("[Info] Embedding gRPC server listening on port %s", servePort)
+	healthSrv := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthSrv)
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthSrv.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
+
+	advertiseAddr, err := discovery.AdvertiseAddr(servePort)
+	if err != nil {
+		log.Fatalf("Failed to resolve advertise addr: %v", err)
+	}
+	registerCtx, registerCancel := context.WithCancel(context.Background())
+	defer registerCancel()
+	deregister, err := discovery.Register(registerCtx, serviceName, advertiseAddr)
+	if err != nil {
+		log.Fatalf("Failed to register with discovery: %v", err)
+	}
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-stop
+		fmt.Printf("[Info] Embedding received signal %s, shutting down\n", sig)
+		healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+		healthSrv.SetServingStatus(serviceName, healthpb.HealthCheckResponse_NOT_SERVING)
+		deregister()
+		s.GracefulStop()
+	}()
+
+	fmt.Printf("[Info] Embedding gRPC server listening on port %s, advertise=%s\n", servePort, advertiseAddr)
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}

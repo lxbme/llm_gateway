@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"llm_gateway/internal/discovery"
 	"llm_gateway/rag"
 	pb "llm_gateway/rag/proto"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Client struct {
@@ -17,7 +17,7 @@ type Client struct {
 }
 
 func NewClient(address string) (*Client, error) {
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := discovery.Dial("rag", address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to rag service: %w", err)
 	}

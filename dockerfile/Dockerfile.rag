@@ -8,6 +8,7 @@ RUN go mod download
 COPY cmd ./cmd/
 COPY embedding ./embedding/
 COPY rag ./rag/
+COPY internal ./internal/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /rag-bin ./cmd/rag
 

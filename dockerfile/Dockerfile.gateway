@@ -12,6 +12,7 @@ COPY completion ./completion/
 COPY auth ./auth/
 COPY gateway ./gateway/
 COPY rag ./rag/
+COPY internal ./internal/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /gateway-bin ./cmd/gateway
 

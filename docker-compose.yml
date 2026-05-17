@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   qdrant:
     image: qdrant/qdrant:latest
@@ -32,7 +30,7 @@ services:
       - qdrant
     networks:
       - ai-net
-  
+
   redis:
     image: redis:alpine
     container_name: llm_redis
@@ -43,20 +41,42 @@ services:
     restart: unless-stopped
     networks:
       - ai-net
-  
-  
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.17
+    container_name: llm_etcd
+    command:
+      - /usr/local/bin/etcd
+      - --name=node0
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-advertise-peer-urls=http://etcd:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-cluster=node0=http://etcd:2380
+    ports:
+      - "2379:2379"
+    restart: unless-stopped
+    networks:
+      - ai-net
+
   embedding-service:
     build:
       context: .
       dockerfile: ./dockerfile/Dockerfile.embedding
-    ports:
-      - "50051:50051"
+    # ports section removed to allow `docker compose up --scale embedding-service=N`.
+    # Peers reach embedding via etcd discovery or the ai-net DNS name.
+    expose:
+      - "50051"
     environment:
       - EMBED_PROVIDER=${EMBED_PROVIDER}
       - EMBED_API_KEY=${EMBED_API_KEY}
       - EMBED_ENDPOINT=${EMBED_ENDPOINT}
       - EMBED_MODEL=${EMBED_MODEL}
       - EMBED_DIMENSIONS=${EMBED_DIMENSIONS}
+      - ETCD_ENDPOINTS=${ETCD_ENDPOINTS:-etcd:2379}
+      - ADVERTISE_ADDR=${EMBEDDING_ADVERTISE_ADDR:-}
+    depends_on:
+      - etcd
     networks:
       - ai-net
 
@@ -64,8 +84,8 @@ services:
     build:
       context: .
       dockerfile: ./dockerfile/Dockerfile.cache
-    ports:
-      - "50052:50052"
+    expose:
+      - "50052"
     environment:
       - CACHE_MODE=${CACHE_MODE:-semantic}
       - CACHE_STORE_PROVIDER=${CACHE_STORE_PROVIDER:-qdrant}
@@ -76,47 +96,58 @@ services:
       - QDRANT_PORT=6334
       - QDRANT_COLLECTION_NAME=${QDRANT_COLLECTION_NAME:-llm_semantic_cache}
       - QDRANT_SIMILARITY_THRESHOLD=${QDRANT_SIMILARITY_THRESHOLD:-0.95}
+      - ETCD_ENDPOINTS=${ETCD_ENDPOINTS:-etcd:2379}
+      - ADVERTISE_ADDR=${CACHE_ADVERTISE_ADDR:-}
     depends_on:
       embedding-service:
         condition: service_started
       qdrant-ready:
         condition: service_healthy
+      etcd:
+        condition: service_started
     restart: on-failure
     networks:
       - ai-net
-  
+
   completion-service:
     build:
       context: .
       dockerfile: ./dockerfile/Dockerfile.completion
-    ports:
-      - "50053:50053"
+    expose:
+      - "50053"
     environment:
       - COMPL_API_KEY=${COMPL_API_KEY}
       - COMPL_ENDPOINT=${COMPL_ENDPOINT}
+      - ETCD_ENDPOINTS=${ETCD_ENDPOINTS:-etcd:2379}
+      - ADVERTISE_ADDR=${COMPLETION_ADVERTISE_ADDR:-}
+    depends_on:
+      - etcd
     networks:
       - ai-net
-  
+
   auth-service:
     build:
       context: .
       dockerfile: ./dockerfile/Dockerfile.auth
-    ports:
-      - "50054:50054"
+    expose:
+      - "50054"
     environment:
       - REDIS_ADDR=redis:6379
       - REDIS_DB=${REDIS_DB:-0}
+      - ETCD_ENDPOINTS=${ETCD_ENDPOINTS:-etcd:2379}
+      - ADVERTISE_ADDR=${AUTH_ADVERTISE_ADDR:-}
     depends_on:
       - redis
+      - etcd
     networks:
       - ai-net
-    
+
   rag-service:
     build:
       context: .
       dockerfile: ./dockerfile/Dockerfile.rag
-    ports:
-      - "50055:50055"
+    expose:
+      - "50055"
     environment:
       - EMBED_ADDR=embedding-service:50051
       - QDRANT_HOST=qdrant
@@ -124,11 +155,15 @@ services:
       - QDRANT_COLLECTION_NAME=${RAG_QDRANT_COLLECTION_NAME:-llm_rag_documents}
       - RAG_SIMILARITY_THRESHOLD=${RAG_SIMILARITY_THRESHOLD:-0.6}
       - RAG_DEFAULT_TOP_K=${RAG_DEFAULT_TOP_K:-3}
+      - ETCD_ENDPOINTS=${ETCD_ENDPOINTS:-etcd:2379}
+      - ADVERTISE_ADDR=${RAG_ADVERTISE_ADDR:-}
     depends_on:
       embedding-service:
         condition: service_started
       qdrant-ready:
         condition: service_healthy
+      etcd:
+        condition: service_started
     restart: on-failure
     networks:
       - ai-net
@@ -148,11 +183,13 @@ services:
       - DEBUG_MODE=${DEBUG_MODE}
       - LOG_LEVEL=${LOG_LEVEL:-ERROR}
       - ADMIN_SECRET=${ADMIN_SECRET}
+      - ETCD_ENDPOINTS=${ETCD_ENDPOINTS:-etcd:2379}
     depends_on:
       - cache-service
       - completion-service
       - auth-service
       - rag-service
+      - etcd
     restart: on-failure
     networks:
       - ai-net

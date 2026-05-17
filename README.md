@@ -343,6 +343,58 @@ curl -s -X POST http://localhost:8081/admin/create \
 |----------|---------|-------------|
 | `ADMIN_SECRET` | — | **Required.** Shared secret for `X-Admin-Secret` header. Admin API is disabled when empty. |
 
+## Service Discovery (etcd)
+
+Each microservice can optionally register itself with etcd on startup, and every gRPC client in the gateway resolves peers through `etcd:///services/<name>` with `round_robin` load balancing. This is what enables horizontal scaling — e.g. `docker compose up -d --scale embedding-service=3`.
+
+### Modes
+
+| `ETCD_ENDPOINTS` | Behavior |
+|---|---|
+| **unset / empty** | Each service ignores etcd; clients dial the legacy `*_ADDR` (`EMBED_ADDR`, `CACHE_ADDR`, …) directly. Single-instance mode, identical to pre-discovery behavior. |
+| **set** (e.g. `etcd:2379`) | Services register with a 10-second lease and keep it alive while running; clients watch `services/<name>/*` and balance across the live set. |
+
+### Per-instance address
+
+When a service registers, it advertises an `<host>:<port>` to peers. Resolution order:
+
+1. `ADVERTISE_ADDR` env var (explicit override)
+2. `os.Hostname() + ":" + SERVE_PORT` (default — matches the container hostname under compose/k8s)
+
+### Graceful shutdown
+
+On `SIGTERM` / `SIGINT`, each registered service:
+
+1. Marks its `grpc.health.v1` health endpoint `NOT_SERVING`
+2. Calls `mgr.DeleteEndpoint` and `lease.Revoke` so the etcd key disappears immediately (no need to wait for TTL)
+3. Calls `grpc.Server.GracefulStop()` to drain in-flight RPCs
+
+If the process is hard-killed (SIGKILL), the lease expires after 10 s and the endpoint is evicted automatically.
+
+### Health checks
+
+Every registered service exposes the standard `grpc.health.v1.Health` service alongside its business gRPC. External probes (Kubernetes liveness, sidecars) can call it via `grpc_health_probe -addr=<host>:<port>`.
+
+### Scope
+
+All five gRPC services (`embedding`, `cache`, `completion`, `auth`, `rag`) register with etcd on startup and resolve their peers through it. The gateway is a pure client and reaches every service via `etcd:///services/<name>`.
+
+### Scaling a service
+
+Because the compose file now uses `expose:` (in-network only) instead of host port mappings for the gRPC services, you can scale any of them directly:
+
+```sh
+docker compose -f docker-compose.prod.yml up -d --scale embedding-service=3 --scale cache-service=2
+```
+
+Verify with:
+
+```sh
+etcdctl --endpoints=localhost:2379 get --prefix services/
+```
+
+You should see one entry per running instance. Killing or stopping an instance evicts its entry; clients pick up the new set automatically.
+
 ## License
 
 See [LICENSE](LICENSE).

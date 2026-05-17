@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"llm_gateway/embedding"
 	pb "llm_gateway/embedding/proto"
+	"llm_gateway/internal/discovery"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -17,7 +17,7 @@ type Client struct {
 }
 
 func NewClient(address string) (*Client, error) {
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := discovery.Dial("embedding", address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to embedding service: %w", err)
 	}

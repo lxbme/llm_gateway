@@ -451,7 +451,28 @@ admin 接口不走主 pipeline，而是由：
 - 将指标、trace、审计信息统一沉淀到 `GatewayContext.Data`
 - 继续将 `gateway/` 内部按 `chat`、`admin`、`pipeline`、`transport` 再细分子目录
 
-## 17. 总结
+## 17. 服务发现（etcd）
+
+从 PR-1 起，各微服务支持通过 etcd 做服务注册与发现，从而启用多实例横向扩容。
+
+### 17.1 工作机制
+
+- 服务端：启动后通过 `endpoints.Manager.AddEndpoint(...)` 写入一个带 10s lease 的 KV 到 `services/<服务名>/<advertise-addr>`，并在后台跑 KeepAlive。`SIGTERM` 时主动 `DeleteEndpoint + Revoke`，让 etcd key 立刻消失。
+- 客户端：所有 `<svc>/grpc/client.go` 的 `NewClient(address)` 在内部调用 `discovery.Dial(serviceName, fallbackAddr)`，启用 etcd 时拨 `etcd:///services/<服务名>` 并启用 `round_robin`，失败回退到 `fallbackAddr` 直连。
+
+### 17.2 降级路径
+
+`ETCD_ENDPOINTS` 为空时，所有调用回退到原来的 `*_ADDR` 直连，行为与改造前完全一致。本地开发和 CI 不需要 etcd。
+
+### 17.3 健康检查
+
+每个注册服务同步注册了 `grpc.health.v1.Health`，外部探针可用 `grpc_health_probe` 检测。
+
+### 17.4 流式 RPC 的特殊性
+
+`completion.GetStream` 是 server-streaming。`round_robin` 在**建立流的那一刻**选定实例并绑定整条流；实例中途崩溃会导致**当前流**中断，但**新建立的流**会被分配到剩余健康实例。当前网关不做 mid-stream 续传。
+
+## 18. 总结
 
 当前 `gateway` 的本质已经不再是“一个 handler 调几个服务”，而是一个：
 
