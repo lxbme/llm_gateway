@@ -14,10 +14,12 @@ import (
 )
 
 type Dependencies struct {
-	Auth       auth.Service
-	Cache      cache.Service
-	Completion completion.Service
-	RAG        rag.Service // nil = RAG disabled
+	Auth            auth.Service
+	Cache           cache.Service
+	Completion      completion.Service
+	CompletionStats completion.StatsProvider // nil = admin stats endpoint returns 503
+	CompletionAdmin completion.Admin         // nil = admin pool-mgmt endpoints return 503
+	RAG             rag.Service              // nil = RAG disabled
 }
 
 type GatewayContext struct {

@@ -165,6 +165,642 @@ func (x *CompletionChunk) GetTokenUsage() int32 {
 	return 0
 }
 
+type PoolStatsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PoolStatsRequest) Reset() {
+	*x = PoolStatsRequest{}
+	mi := &file_completion_proto_completion_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PoolStatsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PoolStatsRequest) ProtoMessage() {}
+
+func (x *PoolStatsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PoolStatsRequest.ProtoReflect.Descriptor instead.
+func (*PoolStatsRequest) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{2}
+}
+
+type PoolStatsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Endpoints     []*EndpointStat        `protobuf:"bytes,1,rep,name=endpoints,proto3" json:"endpoints,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PoolStatsResponse) Reset() {
+	*x = PoolStatsResponse{}
+	mi := &file_completion_proto_completion_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PoolStatsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PoolStatsResponse) ProtoMessage() {}
+
+func (x *PoolStatsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PoolStatsResponse.ProtoReflect.Descriptor instead.
+func (*PoolStatsResponse) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *PoolStatsResponse) GetEndpoints() []*EndpointStat {
+	if x != nil {
+		return x.Endpoints
+	}
+	return nil
+}
+
+type EndpointStat struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Weight        int32                  `protobuf:"varint,2,opt,name=weight,proto3" json:"weight,omitempty"`
+	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	InFlight      int64                  `protobuf:"varint,4,opt,name=in_flight,json=inFlight,proto3" json:"in_flight,omitempty"`
+	Success       uint64                 `protobuf:"varint,5,opt,name=success,proto3" json:"success,omitempty"`
+	Failure       uint64                 `protobuf:"varint,6,opt,name=failure,proto3" json:"failure,omitempty"`
+	SuccessRate   float64                `protobuf:"fixed64,7,opt,name=success_rate,json=successRate,proto3" json:"success_rate,omitempty"`
+	LatencyMsEwma float64                `protobuf:"fixed64,8,opt,name=latency_ms_ewma,json=latencyMsEwma,proto3" json:"latency_ms_ewma,omitempty"`
+	BreakerState  string                 `protobuf:"bytes,9,opt,name=breaker_state,json=breakerState,proto3" json:"breaker_state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EndpointStat) Reset() {
+	*x = EndpointStat{}
+	mi := &file_completion_proto_completion_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndpointStat) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndpointStat) ProtoMessage() {}
+
+func (x *EndpointStat) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndpointStat.ProtoReflect.Descriptor instead.
+func (*EndpointStat) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *EndpointStat) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EndpointStat) GetWeight() int32 {
+	if x != nil {
+		return x.Weight
+	}
+	return 0
+}
+
+func (x *EndpointStat) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *EndpointStat) GetInFlight() int64 {
+	if x != nil {
+		return x.InFlight
+	}
+	return 0
+}
+
+func (x *EndpointStat) GetSuccess() uint64 {
+	if x != nil {
+		return x.Success
+	}
+	return 0
+}
+
+func (x *EndpointStat) GetFailure() uint64 {
+	if x != nil {
+		return x.Failure
+	}
+	return 0
+}
+
+func (x *EndpointStat) GetSuccessRate() float64 {
+	if x != nil {
+		return x.SuccessRate
+	}
+	return 0
+}
+
+func (x *EndpointStat) GetLatencyMsEwma() float64 {
+	if x != nil {
+		return x.LatencyMsEwma
+	}
+	return 0
+}
+
+func (x *EndpointStat) GetBreakerState() string {
+	if x != nil {
+		return x.BreakerState
+	}
+	return ""
+}
+
+type ListEndpointsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEndpointsRequest) Reset() {
+	*x = ListEndpointsRequest{}
+	mi := &file_completion_proto_completion_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEndpointsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEndpointsRequest) ProtoMessage() {}
+
+func (x *ListEndpointsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEndpointsRequest.ProtoReflect.Descriptor instead.
+func (*ListEndpointsRequest) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{5}
+}
+
+type ListEndpointsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Endpoints     []*EndpointView        `protobuf:"bytes,1,rep,name=endpoints,proto3" json:"endpoints,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEndpointsResponse) Reset() {
+	*x = ListEndpointsResponse{}
+	mi := &file_completion_proto_completion_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEndpointsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEndpointsResponse) ProtoMessage() {}
+
+func (x *ListEndpointsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEndpointsResponse.ProtoReflect.Descriptor instead.
+func (*ListEndpointsResponse) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListEndpointsResponse) GetEndpoints() []*EndpointView {
+	if x != nil {
+		return x.Endpoints
+	}
+	return nil
+}
+
+type EndpointView struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	ApiKeyEnv     string                 `protobuf:"bytes,3,opt,name=api_key_env,json=apiKeyEnv,proto3" json:"api_key_env,omitempty"`
+	Weight        int32                  `protobuf:"varint,4,opt,name=weight,proto3" json:"weight,omitempty"`
+	Models        []string               `protobuf:"bytes,5,rep,name=models,proto3" json:"models,omitempty"`
+	Enabled       bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	BreakerState  string                 `protobuf:"bytes,7,opt,name=breaker_state,json=breakerState,proto3" json:"breaker_state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EndpointView) Reset() {
+	*x = EndpointView{}
+	mi := &file_completion_proto_completion_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndpointView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndpointView) ProtoMessage() {}
+
+func (x *EndpointView) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndpointView.ProtoReflect.Descriptor instead.
+func (*EndpointView) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *EndpointView) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EndpointView) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *EndpointView) GetApiKeyEnv() string {
+	if x != nil {
+		return x.ApiKeyEnv
+	}
+	return ""
+}
+
+func (x *EndpointView) GetWeight() int32 {
+	if x != nil {
+		return x.Weight
+	}
+	return 0
+}
+
+func (x *EndpointView) GetModels() []string {
+	if x != nil {
+		return x.Models
+	}
+	return nil
+}
+
+func (x *EndpointView) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *EndpointView) GetBreakerState() string {
+	if x != nil {
+		return x.BreakerState
+	}
+	return ""
+}
+
+type EndpointSpec struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Url           string                 `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	ApiKeyEnv     string                 `protobuf:"bytes,3,opt,name=api_key_env,json=apiKeyEnv,proto3" json:"api_key_env,omitempty"`
+	Weight        int32                  `protobuf:"varint,4,opt,name=weight,proto3" json:"weight,omitempty"`
+	Models        []string               `protobuf:"bytes,5,rep,name=models,proto3" json:"models,omitempty"`
+	Enabled       bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EndpointSpec) Reset() {
+	*x = EndpointSpec{}
+	mi := &file_completion_proto_completion_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndpointSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndpointSpec) ProtoMessage() {}
+
+func (x *EndpointSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndpointSpec.ProtoReflect.Descriptor instead.
+func (*EndpointSpec) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *EndpointSpec) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EndpointSpec) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *EndpointSpec) GetApiKeyEnv() string {
+	if x != nil {
+		return x.ApiKeyEnv
+	}
+	return ""
+}
+
+func (x *EndpointSpec) GetWeight() int32 {
+	if x != nil {
+		return x.Weight
+	}
+	return 0
+}
+
+func (x *EndpointSpec) GetModels() []string {
+	if x != nil {
+		return x.Models
+	}
+	return nil
+}
+
+func (x *EndpointSpec) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+type EndpointName struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EndpointName) Reset() {
+	*x = EndpointName{}
+	mi := &file_completion_proto_completion_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndpointName) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndpointName) ProtoMessage() {}
+
+func (x *EndpointName) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndpointName.ProtoReflect.Descriptor instead.
+func (*EndpointName) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *EndpointName) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ReweightRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Weight        int32                  `protobuf:"varint,2,opt,name=weight,proto3" json:"weight,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReweightRequest) Reset() {
+	*x = ReweightRequest{}
+	mi := &file_completion_proto_completion_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReweightRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReweightRequest) ProtoMessage() {}
+
+func (x *ReweightRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReweightRequest.ProtoReflect.Descriptor instead.
+func (*ReweightRequest) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ReweightRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ReweightRequest) GetWeight() int32 {
+	if x != nil {
+		return x.Weight
+	}
+	return 0
+}
+
+type SetEnabledRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Enabled       bool                   `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetEnabledRequest) Reset() {
+	*x = SetEnabledRequest{}
+	mi := &file_completion_proto_completion_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetEnabledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetEnabledRequest) ProtoMessage() {}
+
+func (x *SetEnabledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetEnabledRequest.ProtoReflect.Descriptor instead.
+func (*SetEnabledRequest) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SetEnabledRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SetEnabledRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+type AdminAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminAck) Reset() {
+	*x = AdminAck{}
+	mi := &file_completion_proto_completion_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminAck) ProtoMessage() {}
+
+func (x *AdminAck) ProtoReflect() protoreflect.Message {
+	mi := &file_completion_proto_completion_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminAck.ProtoReflect.Descriptor instead.
+func (*AdminAck) Descriptor() ([]byte, []int) {
+	return file_completion_proto_completion_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *AdminAck) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_completion_proto_completion_proto protoreflect.FileDescriptor
 
 const file_completion_proto_completion_proto_rawDesc = "" +
@@ -183,9 +819,59 @@ const file_completion_proto_completion_proto_rawDesc = "" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x12\n" +
 	"\x04done\x18\x03 \x01(\bR\x04done\x12\x1f\n" +
 	"\vtoken_usage\x18\x04 \x01(\x05R\n" +
-	"tokenUsage2^\n" +
+	"tokenUsage\"\x12\n" +
+	"\x10PoolStatsRequest\"K\n" +
+	"\x11PoolStatsResponse\x126\n" +
+	"\tendpoints\x18\x01 \x03(\v2\x18.completion.EndpointStatR\tendpoints\"\x95\x02\n" +
+	"\fEndpointStat\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06weight\x18\x02 \x01(\x05R\x06weight\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x1b\n" +
+	"\tin_flight\x18\x04 \x01(\x03R\binFlight\x12\x18\n" +
+	"\asuccess\x18\x05 \x01(\x04R\asuccess\x12\x18\n" +
+	"\afailure\x18\x06 \x01(\x04R\afailure\x12!\n" +
+	"\fsuccess_rate\x18\a \x01(\x01R\vsuccessRate\x12&\n" +
+	"\x0flatency_ms_ewma\x18\b \x01(\x01R\rlatencyMsEwma\x12#\n" +
+	"\rbreaker_state\x18\t \x01(\tR\fbreakerState\"\x16\n" +
+	"\x14ListEndpointsRequest\"O\n" +
+	"\x15ListEndpointsResponse\x126\n" +
+	"\tendpoints\x18\x01 \x03(\v2\x18.completion.EndpointViewR\tendpoints\"\xc3\x01\n" +
+	"\fEndpointView\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1e\n" +
+	"\vapi_key_env\x18\x03 \x01(\tR\tapiKeyEnv\x12\x16\n" +
+	"\x06weight\x18\x04 \x01(\x05R\x06weight\x12\x16\n" +
+	"\x06models\x18\x05 \x03(\tR\x06models\x12\x18\n" +
+	"\aenabled\x18\x06 \x01(\bR\aenabled\x12#\n" +
+	"\rbreaker_state\x18\a \x01(\tR\fbreakerState\"\x9e\x01\n" +
+	"\fEndpointSpec\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1e\n" +
+	"\vapi_key_env\x18\x03 \x01(\tR\tapiKeyEnv\x12\x16\n" +
+	"\x06weight\x18\x04 \x01(\x05R\x06weight\x12\x16\n" +
+	"\x06models\x18\x05 \x03(\tR\x06models\x12\x18\n" +
+	"\aenabled\x18\x06 \x01(\bR\aenabled\"\"\n" +
+	"\fEndpointName\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"=\n" +
+	"\x0fReweightRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06weight\x18\x02 \x01(\x05R\x06weight\"A\n" +
+	"\x11SetEnabledRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aenabled\x18\x02 \x01(\bR\aenabled\"\x1a\n" +
+	"\bAdminAck\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xa8\x01\n" +
 	"\x11CompletionService\x12I\n" +
-	"\tGetStream\x12\x1d.completion.CompletionRequest\x1a\x1b.completion.CompletionChunk0\x01B\x12Z\x10completion/protob\x06proto3"
+	"\tGetStream\x12\x1d.completion.CompletionRequest\x1a\x1b.completion.CompletionChunk0\x01\x12H\n" +
+	"\tPoolStats\x12\x1c.completion.PoolStatsRequest\x1a\x1d.completion.PoolStatsResponse2\xaa\x03\n" +
+	"\x0fCompletionAdmin\x12T\n" +
+	"\rListEndpoints\x12 .completion.ListEndpointsRequest\x1a!.completion.ListEndpointsResponse\x12=\n" +
+	"\vAddEndpoint\x12\x18.completion.EndpointSpec\x1a\x14.completion.AdminAck\x12@\n" +
+	"\x0eRemoveEndpoint\x12\x18.completion.EndpointName\x1a\x14.completion.AdminAck\x12=\n" +
+	"\bReweight\x12\x1b.completion.ReweightRequest\x1a\x14.completion.AdminAck\x12A\n" +
+	"\n" +
+	"SetEnabled\x12\x1d.completion.SetEnabledRequest\x1a\x14.completion.AdminAck\x12>\n" +
+	"\fResetBreaker\x12\x18.completion.EndpointName\x1a\x14.completion.AdminAckB\x12Z\x10completion/protob\x06proto3"
 
 var (
 	file_completion_proto_completion_proto_rawDescOnce sync.Once
@@ -199,19 +885,46 @@ func file_completion_proto_completion_proto_rawDescGZIP() []byte {
 	return file_completion_proto_completion_proto_rawDescData
 }
 
-var file_completion_proto_completion_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_completion_proto_completion_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_completion_proto_completion_proto_goTypes = []any{
-	(*CompletionRequest)(nil), // 0: completion.CompletionRequest
-	(*CompletionChunk)(nil),   // 1: completion.CompletionChunk
+	(*CompletionRequest)(nil),     // 0: completion.CompletionRequest
+	(*CompletionChunk)(nil),       // 1: completion.CompletionChunk
+	(*PoolStatsRequest)(nil),      // 2: completion.PoolStatsRequest
+	(*PoolStatsResponse)(nil),     // 3: completion.PoolStatsResponse
+	(*EndpointStat)(nil),          // 4: completion.EndpointStat
+	(*ListEndpointsRequest)(nil),  // 5: completion.ListEndpointsRequest
+	(*ListEndpointsResponse)(nil), // 6: completion.ListEndpointsResponse
+	(*EndpointView)(nil),          // 7: completion.EndpointView
+	(*EndpointSpec)(nil),          // 8: completion.EndpointSpec
+	(*EndpointName)(nil),          // 9: completion.EndpointName
+	(*ReweightRequest)(nil),       // 10: completion.ReweightRequest
+	(*SetEnabledRequest)(nil),     // 11: completion.SetEnabledRequest
+	(*AdminAck)(nil),              // 12: completion.AdminAck
 }
 var file_completion_proto_completion_proto_depIdxs = []int32{
-	0, // 0: completion.CompletionService.GetStream:input_type -> completion.CompletionRequest
-	1, // 1: completion.CompletionService.GetStream:output_type -> completion.CompletionChunk
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4,  // 0: completion.PoolStatsResponse.endpoints:type_name -> completion.EndpointStat
+	7,  // 1: completion.ListEndpointsResponse.endpoints:type_name -> completion.EndpointView
+	0,  // 2: completion.CompletionService.GetStream:input_type -> completion.CompletionRequest
+	2,  // 3: completion.CompletionService.PoolStats:input_type -> completion.PoolStatsRequest
+	5,  // 4: completion.CompletionAdmin.ListEndpoints:input_type -> completion.ListEndpointsRequest
+	8,  // 5: completion.CompletionAdmin.AddEndpoint:input_type -> completion.EndpointSpec
+	9,  // 6: completion.CompletionAdmin.RemoveEndpoint:input_type -> completion.EndpointName
+	10, // 7: completion.CompletionAdmin.Reweight:input_type -> completion.ReweightRequest
+	11, // 8: completion.CompletionAdmin.SetEnabled:input_type -> completion.SetEnabledRequest
+	9,  // 9: completion.CompletionAdmin.ResetBreaker:input_type -> completion.EndpointName
+	1,  // 10: completion.CompletionService.GetStream:output_type -> completion.CompletionChunk
+	3,  // 11: completion.CompletionService.PoolStats:output_type -> completion.PoolStatsResponse
+	6,  // 12: completion.CompletionAdmin.ListEndpoints:output_type -> completion.ListEndpointsResponse
+	12, // 13: completion.CompletionAdmin.AddEndpoint:output_type -> completion.AdminAck
+	12, // 14: completion.CompletionAdmin.RemoveEndpoint:output_type -> completion.AdminAck
+	12, // 15: completion.CompletionAdmin.Reweight:output_type -> completion.AdminAck
+	12, // 16: completion.CompletionAdmin.SetEnabled:output_type -> completion.AdminAck
+	12, // 17: completion.CompletionAdmin.ResetBreaker:output_type -> completion.AdminAck
+	10, // [10:18] is the sub-list for method output_type
+	2,  // [2:10] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_completion_proto_completion_proto_init() }
@@ -225,9 +938,9 @@ func file_completion_proto_completion_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_completion_proto_completion_proto_rawDesc), len(file_completion_proto_completion_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   13,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_completion_proto_completion_proto_goTypes,
 		DependencyIndexes: file_completion_proto_completion_proto_depIdxs,

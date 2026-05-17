@@ -6,6 +6,16 @@ option go_package = "completion/proto";
 
 service CompletionService {
     rpc GetStream(CompletionRequest) returns (stream CompletionChunk);
+    rpc PoolStats(PoolStatsRequest) returns (PoolStatsResponse);
+}
+
+service CompletionAdmin {
+    rpc ListEndpoints(ListEndpointsRequest) returns (ListEndpointsResponse);
+    rpc AddEndpoint(EndpointSpec) returns (AdminAck);
+    rpc RemoveEndpoint(EndpointName) returns (AdminAck);
+    rpc Reweight(ReweightRequest) returns (AdminAck);
+    rpc SetEnabled(SetEnabledRequest) returns (AdminAck);
+    rpc ResetBreaker(EndpointName) returns (AdminAck);
 }
 
 message CompletionRequest {
@@ -21,4 +31,65 @@ message CompletionChunk {
     string error = 2;
     bool done = 3;
     int32 token_usage = 4;
+}
+
+message PoolStatsRequest {}
+
+message PoolStatsResponse {
+    repeated EndpointStat endpoints = 1;
+}
+
+message EndpointStat {
+    string name = 1;
+    int32 weight = 2;
+    bool enabled = 3;
+    int64 in_flight = 4;
+    uint64 success = 5;
+    uint64 failure = 6;
+    double success_rate = 7;
+    double latency_ms_ewma = 8;
+    string breaker_state = 9;
+}
+
+message ListEndpointsRequest {}
+
+message ListEndpointsResponse {
+    repeated EndpointView endpoints = 1;
+}
+
+message EndpointView {
+    string name = 1;
+    string url = 2;
+    string api_key_env = 3;
+    int32 weight = 4;
+    repeated string models = 5;
+    bool enabled = 6;
+    string breaker_state = 7;
+}
+
+message EndpointSpec {
+    string name = 1;
+    string url = 2;
+    string api_key_env = 3;
+    int32 weight = 4;
+    repeated string models = 5;
+    bool enabled = 6;
+}
+
+message EndpointName {
+    string name = 1;
+}
+
+message ReweightRequest {
+    string name = 1;
+    int32 weight = 2;
+}
+
+message SetEnabledRequest {
+    string name = 1;
+    bool enabled = 2;
+}
+
+message AdminAck {
+    bool ok = 1;
 }

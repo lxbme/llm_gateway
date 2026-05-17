@@ -22,6 +22,13 @@ func (s *Server) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/rag/ingest", s.handleRAGIngest)
 	mux.HandleFunc("POST /admin/rag/ingest/text", s.handleRAGIngestText)
 	mux.HandleFunc("DELETE /admin/rag/doc", s.handleRAGDeleteDoc)
+	mux.HandleFunc("GET /admin/completion/stats", s.handleCompletionStats)
+	mux.HandleFunc("GET /admin/completion/endpoints", s.handleListCompletionEndpoints)
+	mux.HandleFunc("POST /admin/completion/endpoint", s.handleAddCompletionEndpoint)
+	mux.HandleFunc("DELETE /admin/completion/endpoint", s.handleRemoveCompletionEndpoint)
+	mux.HandleFunc("POST /admin/completion/endpoint/weight", s.handleReweightCompletionEndpoint)
+	mux.HandleFunc("POST /admin/completion/endpoint/enabled", s.handleSetCompletionEndpointEnabled)
+	mux.HandleFunc("POST /admin/completion/breaker/reset", s.handleResetCompletionBreaker)
 }
 
 func (s *Server) handleRedisCreate(w http.ResponseWriter, r *http.Request) {

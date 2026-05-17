@@ -7,6 +7,7 @@ require (
 	github.com/jxskiss/base62 v1.1.0
 	github.com/qdrant/go-client v1.16.2
 	github.com/redis/go-redis/v9 v9.18.0
+	github.com/sony/gobreaker v1.0.0
 	go.etcd.io/etcd/client/v3 v3.5.17
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.78.0

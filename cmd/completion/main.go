@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"llm_gateway/completion/openai"
+	"llm_gateway/completion/pool"
 	"llm_gateway/internal/discovery"
 	"log"
 	"net"
@@ -19,7 +19,6 @@ import (
 	pb "llm_gateway/completion/proto"
 )
 
-const completionApiKeyEnvName = "COMPL_API_KEY"
 const serviceName = "completion"
 
 func main() {
@@ -28,12 +27,14 @@ func main() {
 		servePort = "50053"
 	}
 
-	openaiCompletionEndpoint := os.Getenv("COMPL_ENDPOINT")
-	if openaiCompletionEndpoint == "" {
-		panic("COMPL_ENDPOINT environment variable is not set")
+	poolCfg, err := pool.LoadConfigFromEnv()
+	if err != nil {
+		log.Fatalf("[Error] Failed to load pool config: %v", err)
 	}
-
-	completionService := openai.New(openaiCompletionEndpoint, completionApiKeyEnvName)
+	completionService, err := pool.NewFromConfig(poolCfg)
+	if err != nil {
+		log.Fatalf("[Error] Failed to init completion pool: %v", err)
+	}
 
 	lis, err := net.Listen("tcp", ":"+servePort)
 	if err != nil {
@@ -42,6 +43,7 @@ func main() {
 
 	s := grpc.NewServer()
 	pb.RegisterCompletionServiceServer(s, completiongrpc.NewServer(completionService))
+	pb.RegisterCompletionAdminServer(s, completiongrpc.NewAdminServer(completionService))
 
 	healthSrv := health.NewServer()
 	healthpb.RegisterHealthServer(s, healthSrv)

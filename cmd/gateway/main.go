@@ -60,9 +60,11 @@ func main() {
 	defer authSvc.Close()
 
 	deps := gateway.Dependencies{
-		Auth:       authSvc,
-		Cache:      cacheSvc,
-		Completion: completionSvc,
+		Auth:            authSvc,
+		Cache:           cacheSvc,
+		Completion:      completionSvc,
+		CompletionStats: completionSvc,
+		CompletionAdmin: completionSvc,
 	}
 
 	// RAG service is optional: omit RAG_ADDR to run without it.

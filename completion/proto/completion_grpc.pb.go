@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	CompletionService_GetStream_FullMethodName = "/completion.CompletionService/GetStream"
+	CompletionService_PoolStats_FullMethodName = "/completion.CompletionService/PoolStats"
 )
 
 // CompletionServiceClient is the client API for CompletionService service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CompletionServiceClient interface {
 	GetStream(ctx context.Context, in *CompletionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CompletionChunk], error)
+	PoolStats(ctx context.Context, in *PoolStatsRequest, opts ...grpc.CallOption) (*PoolStatsResponse, error)
 }
 
 type completionServiceClient struct {
@@ -56,11 +58,22 @@ func (c *completionServiceClient) GetStream(ctx context.Context, in *CompletionR
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CompletionService_GetStreamClient = grpc.ServerStreamingClient[CompletionChunk]
 
+func (c *completionServiceClient) PoolStats(ctx context.Context, in *PoolStatsRequest, opts ...grpc.CallOption) (*PoolStatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PoolStatsResponse)
+	err := c.cc.Invoke(ctx, CompletionService_PoolStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CompletionServiceServer is the server API for CompletionService service.
 // All implementations must embed UnimplementedCompletionServiceServer
 // for forward compatibility.
 type CompletionServiceServer interface {
 	GetStream(*CompletionRequest, grpc.ServerStreamingServer[CompletionChunk]) error
+	PoolStats(context.Context, *PoolStatsRequest) (*PoolStatsResponse, error)
 	mustEmbedUnimplementedCompletionServiceServer()
 }
 
@@ -73,6 +86,9 @@ type UnimplementedCompletionServiceServer struct{}
 
 func (UnimplementedCompletionServiceServer) GetStream(*CompletionRequest, grpc.ServerStreamingServer[CompletionChunk]) error {
 	return status.Error(codes.Unimplemented, "method GetStream not implemented")
+}
+func (UnimplementedCompletionServiceServer) PoolStats(context.Context, *PoolStatsRequest) (*PoolStatsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PoolStats not implemented")
 }
 func (UnimplementedCompletionServiceServer) mustEmbedUnimplementedCompletionServiceServer() {}
 func (UnimplementedCompletionServiceServer) testEmbeddedByValue()                           {}
@@ -106,13 +122,36 @@ func _CompletionService_GetStream_Handler(srv interface{}, stream grpc.ServerStr
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type CompletionService_GetStreamServer = grpc.ServerStreamingServer[CompletionChunk]
 
+func _CompletionService_PoolStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PoolStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompletionServiceServer).PoolStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CompletionService_PoolStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompletionServiceServer).PoolStats(ctx, req.(*PoolStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CompletionService_ServiceDesc is the grpc.ServiceDesc for CompletionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var CompletionService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "completion.CompletionService",
 	HandlerType: (*CompletionServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "PoolStats",
+			Handler:    _CompletionService_PoolStats_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "GetStream",
@@ -120,5 +159,297 @@ var CompletionService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
+	Metadata: "completion/proto/completion.proto",
+}
+
+const (
+	CompletionAdmin_ListEndpoints_FullMethodName  = "/completion.CompletionAdmin/ListEndpoints"
+	CompletionAdmin_AddEndpoint_FullMethodName    = "/completion.CompletionAdmin/AddEndpoint"
+	CompletionAdmin_RemoveEndpoint_FullMethodName = "/completion.CompletionAdmin/RemoveEndpoint"
+	CompletionAdmin_Reweight_FullMethodName       = "/completion.CompletionAdmin/Reweight"
+	CompletionAdmin_SetEnabled_FullMethodName     = "/completion.CompletionAdmin/SetEnabled"
+	CompletionAdmin_ResetBreaker_FullMethodName   = "/completion.CompletionAdmin/ResetBreaker"
+)
+
+// CompletionAdminClient is the client API for CompletionAdmin service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type CompletionAdminClient interface {
+	ListEndpoints(ctx context.Context, in *ListEndpointsRequest, opts ...grpc.CallOption) (*ListEndpointsResponse, error)
+	AddEndpoint(ctx context.Context, in *EndpointSpec, opts ...grpc.CallOption) (*AdminAck, error)
+	RemoveEndpoint(ctx context.Context, in *EndpointName, opts ...grpc.CallOption) (*AdminAck, error)
+	Reweight(ctx context.Context, in *ReweightRequest, opts ...grpc.CallOption) (*AdminAck, error)
+	SetEnabled(ctx context.Context, in *SetEnabledRequest, opts ...grpc.CallOption) (*AdminAck, error)
+	ResetBreaker(ctx context.Context, in *EndpointName, opts ...grpc.CallOption) (*AdminAck, error)
+}
+
+type completionAdminClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewCompletionAdminClient(cc grpc.ClientConnInterface) CompletionAdminClient {
+	return &completionAdminClient{cc}
+}
+
+func (c *completionAdminClient) ListEndpoints(ctx context.Context, in *ListEndpointsRequest, opts ...grpc.CallOption) (*ListEndpointsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEndpointsResponse)
+	err := c.cc.Invoke(ctx, CompletionAdmin_ListEndpoints_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *completionAdminClient) AddEndpoint(ctx context.Context, in *EndpointSpec, opts ...grpc.CallOption) (*AdminAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminAck)
+	err := c.cc.Invoke(ctx, CompletionAdmin_AddEndpoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *completionAdminClient) RemoveEndpoint(ctx context.Context, in *EndpointName, opts ...grpc.CallOption) (*AdminAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminAck)
+	err := c.cc.Invoke(ctx, CompletionAdmin_RemoveEndpoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *completionAdminClient) Reweight(ctx context.Context, in *ReweightRequest, opts ...grpc.CallOption) (*AdminAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminAck)
+	err := c.cc.Invoke(ctx, CompletionAdmin_Reweight_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *completionAdminClient) SetEnabled(ctx context.Context, in *SetEnabledRequest, opts ...grpc.CallOption) (*AdminAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminAck)
+	err := c.cc.Invoke(ctx, CompletionAdmin_SetEnabled_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *completionAdminClient) ResetBreaker(ctx context.Context, in *EndpointName, opts ...grpc.CallOption) (*AdminAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminAck)
+	err := c.cc.Invoke(ctx, CompletionAdmin_ResetBreaker_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CompletionAdminServer is the server API for CompletionAdmin service.
+// All implementations must embed UnimplementedCompletionAdminServer
+// for forward compatibility.
+type CompletionAdminServer interface {
+	ListEndpoints(context.Context, *ListEndpointsRequest) (*ListEndpointsResponse, error)
+	AddEndpoint(context.Context, *EndpointSpec) (*AdminAck, error)
+	RemoveEndpoint(context.Context, *EndpointName) (*AdminAck, error)
+	Reweight(context.Context, *ReweightRequest) (*AdminAck, error)
+	SetEnabled(context.Context, *SetEnabledRequest) (*AdminAck, error)
+	ResetBreaker(context.Context, *EndpointName) (*AdminAck, error)
+	mustEmbedUnimplementedCompletionAdminServer()
+}
+
+// UnimplementedCompletionAdminServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedCompletionAdminServer struct{}
+
+func (UnimplementedCompletionAdminServer) ListEndpoints(context.Context, *ListEndpointsRequest) (*ListEndpointsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListEndpoints not implemented")
+}
+func (UnimplementedCompletionAdminServer) AddEndpoint(context.Context, *EndpointSpec) (*AdminAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddEndpoint not implemented")
+}
+func (UnimplementedCompletionAdminServer) RemoveEndpoint(context.Context, *EndpointName) (*AdminAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveEndpoint not implemented")
+}
+func (UnimplementedCompletionAdminServer) Reweight(context.Context, *ReweightRequest) (*AdminAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method Reweight not implemented")
+}
+func (UnimplementedCompletionAdminServer) SetEnabled(context.Context, *SetEnabledRequest) (*AdminAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetEnabled not implemented")
+}
+func (UnimplementedCompletionAdminServer) ResetBreaker(context.Context, *EndpointName) (*AdminAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResetBreaker not implemented")
+}
+func (UnimplementedCompletionAdminServer) mustEmbedUnimplementedCompletionAdminServer() {}
+func (UnimplementedCompletionAdminServer) testEmbeddedByValue()                         {}
+
+// UnsafeCompletionAdminServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to CompletionAdminServer will
+// result in compilation errors.
+type UnsafeCompletionAdminServer interface {
+	mustEmbedUnimplementedCompletionAdminServer()
+}
+
+func RegisterCompletionAdminServer(s grpc.ServiceRegistrar, srv CompletionAdminServer) {
+	// If the following call panics, it indicates UnimplementedCompletionAdminServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&CompletionAdmin_ServiceDesc, srv)
+}
+
+func _CompletionAdmin_ListEndpoints_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListEndpointsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompletionAdminServer).ListEndpoints(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CompletionAdmin_ListEndpoints_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompletionAdminServer).ListEndpoints(ctx, req.(*ListEndpointsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CompletionAdmin_AddEndpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EndpointSpec)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompletionAdminServer).AddEndpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CompletionAdmin_AddEndpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompletionAdminServer).AddEndpoint(ctx, req.(*EndpointSpec))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CompletionAdmin_RemoveEndpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EndpointName)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompletionAdminServer).RemoveEndpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CompletionAdmin_RemoveEndpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompletionAdminServer).RemoveEndpoint(ctx, req.(*EndpointName))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CompletionAdmin_Reweight_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReweightRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompletionAdminServer).Reweight(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CompletionAdmin_Reweight_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompletionAdminServer).Reweight(ctx, req.(*ReweightRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CompletionAdmin_SetEnabled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetEnabledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompletionAdminServer).SetEnabled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CompletionAdmin_SetEnabled_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompletionAdminServer).SetEnabled(ctx, req.(*SetEnabledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CompletionAdmin_ResetBreaker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EndpointName)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CompletionAdminServer).ResetBreaker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CompletionAdmin_ResetBreaker_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CompletionAdminServer).ResetBreaker(ctx, req.(*EndpointName))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// CompletionAdmin_ServiceDesc is the grpc.ServiceDesc for CompletionAdmin service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var CompletionAdmin_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "completion.CompletionAdmin",
+	HandlerType: (*CompletionAdminServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListEndpoints",
+			Handler:    _CompletionAdmin_ListEndpoints_Handler,
+		},
+		{
+			MethodName: "AddEndpoint",
+			Handler:    _CompletionAdmin_AddEndpoint_Handler,
+		},
+		{
+			MethodName: "RemoveEndpoint",
+			Handler:    _CompletionAdmin_RemoveEndpoint_Handler,
+		},
+		{
+			MethodName: "Reweight",
+			Handler:    _CompletionAdmin_Reweight_Handler,
+		},
+		{
+			MethodName: "SetEnabled",
+			Handler:    _CompletionAdmin_SetEnabled_Handler,
+		},
+		{
+			MethodName: "ResetBreaker",
+			Handler:    _CompletionAdmin_ResetBreaker_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "completion/proto/completion.proto",
 }
