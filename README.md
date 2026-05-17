@@ -34,8 +34,10 @@ A lightweight, OpenAI-compatible API gateway with semantic caching, RAG (Retriev
 ```sh
 git clone https://github.com/lxbme/llm_gateway.git
 cd llm_gateway
-cp .env.example .env
-# Edit .env with your API keys and endpoints
+cp config/.env.example .env
+# Edit .env with your API keys and endpoints. See config/ for more examples
+# (multi-endpoint pool, horizontal scaling) and the Configuration Reference
+# below for the meaning of every variable.
 ```
 
 ### 2. Start all services
@@ -66,61 +68,34 @@ curl -s http://localhost:8080/v1/chat/completions \
      }'
 ```
 
-## Example `.env`
+## Example configs
 
-```env
-# Embedding service
-EMBED_PROVIDER=openai
-EMBED_API_KEY=sk-your-embedding-api-key
-EMBED_ENDPOINT=https://api.openai.com/v1/embeddings
-EMBED_MODEL=text-embedding-3-small
-EMBED_DIMENSIONS=1536
+All example configs live in [`config/`](config/) — copy them out and adapt:
 
-# Cache service
-CACHE_MODE=semantic
-CACHE_STORE_PROVIDER=qdrant
-CACHE_BUFFER_SIZE=1000
-CACHE_WORKER_COUNT=5
-QDRANT_SIMILARITY_THRESHOLD=0.95
-# QDRANT_COLLECTION_NAME defaults to llm_semantic_cache for the cache service
+| File | Purpose |
+|---|---|
+| [`config/.env.example`](config/.env.example) | Project root `.env` template; covers every env-driven variable |
+| [`config/pool-minimal.example.json`](config/pool-minimal.example.json) | Single-endpoint `completion-service` pool, the smallest JSON-format upgrade from legacy `COMPL_ENDPOINT` |
+| [`config/pool.example.json`](config/pool.example.json) | Full-featured pool: multi-endpoint, weighted, circuit breaker, model affinity |
+| [`config/docker-compose.scale.example.yml`](config/docker-compose.scale.example.yml) | Horizontal-scaling overlay (`docker compose -f … -f …`) with the pool config mounted into completion-service |
 
-# Completion service
-COMPL_API_KEY=sk-your-completion-api-key
-COMPL_ENDPOINT=https://api.openai.com/v1/chat/completions
-
-# RAG service (optional — leave RAG_ADDR empty to disable RAG entirely)
-# RAG_ADDR=localhost:50055
-# RAG_SIMILARITY_THRESHOLD=0.6   # default 0.6
-# RAG_DEFAULT_TOP_K=3            # default 3
-# QDRANT_COLLECTION_NAME defaults to llm_rag_documents for the rag service
-
-# Redis auth DB index
-REDIS_DB=0
-
-# Gateway log level: DEBUG | INFO | ERROR
-LOG_LEVEL=ERROR
-
-# Enable pprof profiling endpoint
-DEBUG_MODE=false
-
-# Admin API secret — REQUIRED to use /admin/* endpoints.
-# If unset, all admin requests will be rejected with 403 Forbidden.
-# Pass this value via the X-Admin-Secret request header.
-ADMIN_SECRET=change-me-to-a-strong-random-secret
-```
+`cp config/.env.example .env` to start; refer to the table below for what every key does.
 
 ## Configuration Reference
+
+The gateway is fully env-driven, with one exception: `completion-service` supports a richer JSON config for multi-endpoint upstream pools. See [§ Completion pool JSON](#completion-pool-json-multi-endpoint-mode) below.
 
 ### Gateway (`gateway`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CACHE_ADDR` | `localhost:50052` | Cache service gRPC address |
-| `COMPL_ADDR` | `localhost:50053` | Completion service gRPC address |
-| `AUTH_ADDR` | `localhost:50054` | Auth service gRPC address |
+| `CACHE_ADDR` | `localhost:50052` | Cache service gRPC address (fallback when etcd discovery is disabled) |
+| `COMPL_ADDR` | `localhost:50053` | Completion service gRPC address (fallback when etcd discovery is disabled) |
+| `AUTH_ADDR` | `localhost:50054` | Auth service gRPC address (fallback when etcd discovery is disabled) |
 | `RAG_ADDR` | `""` | RAG service gRPC address. Leave empty to disable RAG. |
 | `LOG_LEVEL` | `ERROR` | Log verbosity: `DEBUG`, `INFO`, `ERROR` |
 | `DEBUG_MODE` | `false` | Set `true` to enable `/debug/pprof/*` endpoints |
+| `ADMIN_SECRET` | — | **Required to use `/admin/*`.** Compared against the `X-Admin-Secret` header. Unset → all admin calls 403. |
 
 ### Embedding Service (`embedding-service`)
 
@@ -149,15 +124,70 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 | `QDRANT_SIMILARITY_THRESHOLD` | `0.95` | Minimum cosine similarity score required for a cache hit |
 | `SERVE_PORT` | `50052` | gRPC listen port |
 
-`cache-service` now selects its backend using `CACHE_MODE + CACHE_STORE_PROVIDER`. In the current implementation only `semantic + qdrant` is available. When `CACHE_MODE=semantic`, `EMBED_ADDR` must point to a reachable embedding service so the cache can generate vectors before searching or writing.
+`cache-service` selects its backend using `CACHE_MODE + CACHE_STORE_PROVIDER`. Currently only `semantic + qdrant` is implemented. When `CACHE_MODE=semantic`, `EMBED_ADDR` must point to a reachable embedding service so the cache can generate vectors before searching or writing.
 
 ### Completion Service (`completion-service`)
 
+> 📘 **Detailed reference:** [`docs/pool_config.md`](docs/pool_config.md) (or [中文版](docs/pool_config_zh_cn.md)) covers every field, validation rule, strategy, breaker tuning, runtime mutation, multi-replica semantics, and a migration walkthrough. The summary below is for orientation only.
+
+The completion service reads its upstream pool config from one of three sources, in priority order:
+
+1. `COMPL_POOL_CONFIG_FILE` — path to a JSON file (highest)
+2. `COMPL_POOL_CONFIG` — inline JSON string
+3. `COMPL_ENDPOINT` + `COMPL_API_KEY` — legacy single-endpoint fallback (lowest)
+
+If none are set, the service exits with an error. The single-endpoint legacy path is preserved for backwards compatibility but logs a deprecation warning at startup.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `COMPL_API_KEY` | — | API key for the completion provider |
-| `COMPL_ENDPOINT` | — | **Required.** Chat completions API endpoint URL |
+| `COMPL_POOL_CONFIG_FILE` | — | Path to JSON pool config. Highest priority. |
+| `COMPL_POOL_CONFIG` | — | Inline JSON pool config. Used only if `COMPL_POOL_CONFIG_FILE` is empty. |
+| `COMPL_ENDPOINT` | — | Legacy single-endpoint URL. Used only if neither JSON variable is set. Synthesizes a 1-endpoint pool internally. |
+| `COMPL_API_KEY` | — | When in legacy mode, the env var name the openai client reads to authenticate. (i.e., the actual key value is in this env var.) |
+| *referenced API key vars* | — | When in JSON mode, each endpoint's `api_key_env` field names an env var that holds the actual key (e.g. `OPENAI_KEY_PRIMARY`). Those vars must be present in the completion-service process. |
 | `SERVE_PORT` | `50053` | gRPC listen port |
+
+#### Completion pool JSON (multi-endpoint mode)
+
+Full schema (see [`config/pool.example.json`](config/pool.example.json) for a populated example):
+
+```jsonc
+{
+  "strategy":     "weighted_random",   // weighted_random | least_pending | ewma_latency
+  "max_attempts": 3,                   // retry budget per request; pool tries up to this many endpoints
+  "breaker": {                         // optional; omit or "enabled": false to disable circuit breaking
+    "enabled":       true,
+    "max_requests":  1,                // half-open trial requests allowed at once
+    "interval":      "60s",            // closed-state sliding window for rolling counters
+    "timeout":       "30s",            // open-state cooldown before trying half-open
+    "failure_ratio": 0.5,              // trip when failures / requests >= this (within `interval`)
+    "min_requests":  5                 // minimum requests in window before ratio is evaluated
+  },
+  "endpoints": [
+    {
+      "name":        "openai-primary",                                  // unique id used in admin API / stats
+      "url":         "https://api.openai.com/v1/chat/completions",      // full chat completions URL
+      "api_key_env": "OPENAI_KEY_PRIMARY",                              // env var name; not the key itself
+      "weight":      3,                                                 // > 0; relative pick probability under weighted_random
+      "models":      ["gpt-4o", "gpt-4o-mini"],                         // optional; empty or ["*"] = any model
+      "enabled":     true                                               // false → selectors skip it; admin can toggle live
+    }
+  ]
+}
+```
+
+**Strategy semantics**
+| Strategy | Behaviour |
+|---|---|
+| `weighted_random` | Pick proportional to `weight`. Stateless and fair. Default if unspecified. |
+| `least_pending` | Pick endpoint with the lowest `in_flight` request count. Good when LLM latencies are highly skewed by load. |
+| `ewma_latency` | Pick endpoint with the lowest EWMA latency (alpha=0.2). Zero-sample endpoints get a one-shot probe boost to avoid cold-start starvation. |
+
+**Filters applied before each pick** (always on, in order): `model_affinity` (skip endpoints whose `models` list doesn't include the request's model; `["*"]` or empty = accept anything) → `breaker_open` (skip endpoints whose circuit breaker is in the open state).
+
+**Retry semantics**: the pool retries on **synchronous** errors from the underlying upstream (non-2xx, dial failure, etc.). Once a streaming channel has been returned to the caller, mid-stream errors are surfaced as-is and not retried — this is a deliberate trade-off to keep first-byte latency low. See `completion/pool/pool.go:callEndpoint` for the exact boundary.
+
+**Runtime mutation**: every field above can be changed at runtime via the admin API (`/admin/completion/endpoint*`) — see [`docs/api.md` § 3.3](docs/api.md#33-completion-上游池管理). Note that changes affect **only the receiving replica's in-memory state**; in a multi-replica deployment, either call each replica or restart all replicas to pick up the persistent file.
 
 ### RAG Service (`rag-service`)
 
@@ -180,7 +210,19 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 | `REDIS_DB` | — | **Required.** Redis database index |
 | `SERVE_PORT` | `50054` | gRPC listen port |
 
-***REDIS_ADDR** is pointing to redis docker in default docker compose file.* 
+*`REDIS_ADDR` points at the redis container in the default docker compose file.*
+
+### Service discovery (etcd) — applies to all services
+
+When `ETCD_ENDPOINTS` is set, every service registers itself under `services/<name>/<instance-id>` with a 10-second lease, and clients resolve peers via `etcd:///services/<name>` with gRPC `round_robin` balancing. When `ETCD_ENDPOINTS` is empty, the gateway falls back to direct dialing of `*_ADDR` (single-instance mode); use this only for local development.
+
+| Variable | Default | Description |
+|---|---|---|
+| `ETCD_ENDPOINTS` | `""` | Comma-separated etcd endpoints (e.g. `etcd:2379` or `etcd1:2379,etcd2:2379`). Empty → discovery off. |
+| `ADVERTISE_ADDR` | `<hostname>:<SERVE_PORT>` | Per-instance advertise address registered in etcd. Default works for `docker compose --scale` and k8s. Override only when the container hostname is unreachable by peers. |
+| `EMBEDDING_ADVERTISE_ADDR` / `CACHE_ADVERTISE_ADDR` / `COMPLETION_ADVERTISE_ADDR` / `AUTH_ADVERTISE_ADDR` / `RAG_ADVERTISE_ADDR` | — | Per-service overrides — useful in compose when one wrapper env wants to set advertise per service. The service-local `ADVERTISE_ADDR` (set via docker-compose `environment:`) is what each container actually reads. |
+
+For a worked horizontal-scaling example see [`config/docker-compose.scale.example.yml`](config/docker-compose.scale.example.yml). End-to-end behaviour (lease eviction, gateway failover) is exercised by `test/cli/etcd-e2e-test.sh`.
 
 ## RAG (Retrieval-Augmented Generation)
 

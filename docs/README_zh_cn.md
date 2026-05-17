@@ -32,8 +32,9 @@
 ```sh
 git clone https://github.com/lxbme/llm_gateway.git
 cd llm_gateway
-cp .env.example .env
-# 编辑 .env 文件，填写您的 API 密钥和端点
+cp config/.env.example .env
+# 编辑 .env 文件，填写您的 API 密钥和端点。更多示例（多端点池、横向扩容）
+# 见 config/ 目录，所有变量的语义见根 README 的 Configuration Reference。
 ```
 
 ### 2. 启动所有服务
@@ -151,13 +152,28 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 
 `cache-service` 通过 `CACHE_MODE + CACHE_STORE_PROVIDER` 选择底层实现。当前版本只实现了 `semantic + qdrant`。当 `CACHE_MODE=semantic` 时，`EMBED_ADDR` 必须指向可用的 embedding 服务，缓存服务会先生成向量，再执行查询或写入。
 
-### 完成服务 (`completion-service`)
+### Completion服务 (`completion-service`)
+
+> 📘 **详细参考：** [`docs/pool_config_zh_cn.md`](pool_config_zh_cn.md)（或 [English](pool_config.md)）覆盖了每个字段、校验规则、策略、熔断调优、运行时变更、多副本语义和迁移步骤。下面只是速览。
+
+完成服务按下面三种来源之一读取上游池配置，优先级从高到低：
+
+1. `COMPL_POOL_CONFIG_FILE` — JSON 文件路径（最高）
+2. `COMPL_POOL_CONFIG` — 内联 JSON 字符串
+3. `COMPL_ENDPOINT` + `COMPL_API_KEY` — 旧的单上游回退（最低）
+
+三者全空 → 启动报错退出。单上游路径保留是为了向后兼容，会在启动时打 deprecation 警告。
 
 | 变量 | 默认值 | 描述 |
 |------|--------|------|
-| `COMPL_API_KEY` | — | 完成提供商的 API 密钥 |
-| `COMPL_ENDPOINT` | — | **必填。** 聊天完成 API 端点 URL |
+| `COMPL_POOL_CONFIG_FILE` | — | JSON 池配置文件路径。最高优先级。 |
+| `COMPL_POOL_CONFIG` | — | 内联 JSON 池配置。仅在 `COMPL_POOL_CONFIG_FILE` 为空时使用。 |
+| `COMPL_ENDPOINT` | — | 旧的单上游 URL。仅在两个 JSON 变量都没设时使用，内部合成一个 1-端点池。 |
+| `COMPL_API_KEY` | — | 旧模式下，openai client 读这个 env 拿真实 key。 |
+| *被引用的各 API key 变量* | — | JSON 模式下，每个 endpoint 的 `api_key_env` 字段指向一个 env 变量名，那个变量存的是真实 key（如 `OPENAI_KEY_PRIMARY`）。这些变量必须出现在 completion-service 进程的 env 里。 |
 | `SERVE_PORT` | `50053` | gRPC 监听端口 |
+
+JSON schema 完整字段、三种 strategy 语义、filter 链顺序、熔断参数、运行时变更接口——见 [`docs/pool_config_zh_cn.md`](pool_config_zh_cn.md)。
 
 ### RAG 服务 (`rag-service`)
 

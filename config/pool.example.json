@@ -1,0 +1,38 @@
+{
+  "strategy": "weighted_random",
+  "max_attempts": 3,
+  "breaker": {
+    "enabled": true,
+    "max_requests": 1,
+    "interval": "60s",
+    "timeout": "30s",
+    "failure_ratio": 0.5,
+    "min_requests": 5
+  },
+  "endpoints": [
+    {
+      "name": "openai-primary",
+      "url": "https://api.openai.com/v1/chat/completions",
+      "api_key_env": "OPENAI_KEY_PRIMARY",
+      "weight": 3,
+      "models": ["gpt-4o", "gpt-4o-mini"],
+      "enabled": true
+    },
+    {
+      "name": "azure-fallback",
+      "url": "https://my-resource.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview",
+      "api_key_env": "AZURE_KEY_FALLBACK",
+      "weight": 1,
+      "models": ["gpt-4o", "gpt-4o-mini"],
+      "enabled": true
+    },
+    {
+      "name": "any-model-catchall",
+      "url": "https://api.openai.com/v1/chat/completions",
+      "api_key_env": "OPENAI_KEY_SECONDARY",
+      "weight": 1,
+      "models": ["*"],
+      "enabled": true
+    }
+  ]
+}

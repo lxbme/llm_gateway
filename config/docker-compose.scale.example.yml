@@ -1,0 +1,67 @@
+# =============================================================================
+# Horizontal-scaling + multi-endpoint pool overlay.
+#
+# Two things this overlay demonstrates:
+#   1. Mounting a pool config file into completion-service so each replica reads
+#      the same multi-endpoint pool (see config/pool.example.json).
+#   2. Default replica counts via `deploy.replicas` (modern docker compose).
+#
+# Recommended usage workflows:
+#
+# ----- Option A: plain docker compose ----------------------------------------
+#
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f config/docker-compose.scale.example.yml \
+#     up -d --build
+#
+# Docker Compose v2.6+ honors `deploy.replicas` as the default scale count.
+#
+# ----- Option B: podman-compose / older tooling ------------------------------
+#
+# Bring stack up at default scale=1, then adjust with the `scale` subcommand
+# (works around podman-compose 1.5.0 multi-flag bug, see test/cli/etcd-e2e-test.sh):
+#
+#   docker compose -f docker-compose.yml -f config/docker-compose.scale.example.yml up -d --build
+#   docker compose scale --no-deps \
+#     embedding-service=2 cache-service=2 \
+#     completion-service=3 auth-service=2 rag-service=2
+#
+# Verify etcd registration:
+#
+#   docker exec -it llm_etcd etcdctl get --prefix services/
+#
+# Stateful services stay at 1 replica intentionally (qdrant / redis / etcd —
+# use their native clustering for HA, not docker compose scale).
+# =============================================================================
+
+services:
+  embedding-service:
+    deploy:
+      replicas: 2
+
+  cache-service:
+    deploy:
+      replicas: 2
+
+  completion-service:
+    deploy:
+      replicas: 3
+    # Mount the pool config so every replica reads the same upstream list.
+    # The file lives in the host repo at config/pool.example.json.
+    volumes:
+      - ./config/pool.example.json:/etc/llm_gateway/pool.json:ro
+    environment:
+      - COMPL_POOL_CONFIG_FILE=/etc/llm_gateway/pool.json
+      # Inject the real API keys referenced by `api_key_env` in pool.example.json:
+      - OPENAI_KEY_PRIMARY=${OPENAI_KEY_PRIMARY:-}
+      - OPENAI_KEY_SECONDARY=${OPENAI_KEY_SECONDARY:-}
+      - AZURE_KEY_FALLBACK=${AZURE_KEY_FALLBACK:-}
+
+  auth-service:
+    deploy:
+      replicas: 2
+
+  rag-service:
+    deploy:
+      replicas: 2

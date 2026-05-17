@@ -1,0 +1,13 @@
+{
+  "strategy": "weighted_random",
+  "max_attempts": 1,
+  "endpoints": [
+    {
+      "name": "primary",
+      "url": "https://api.openai.com/v1/chat/completions",
+      "api_key_env": "OPENAI_KEY",
+      "weight": 1,
+      "enabled": true
+    }
+  ]
+}
