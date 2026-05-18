@@ -198,6 +198,8 @@ JSON schema 完整字段、三种 strategy 语义、filter 链顺序、熔断参
 
 ***REDIS_ADDR** 默认指向 docker compose 文件中的 redis 容器。*
 
+> 📘 **跨主机部署？** 完整的分布式部署参考（etcd 集群、`ADVERTISE_ADDR` 规则、端口与防火墙清单、四主机完整示例）见 [分布式部署指南](distributed_deployment_zh_cn.md)（[English](distributed_deployment.md)）。
+
 ## RAG（检索增强生成）
 
 网关内置可选的 `rag-service`，可以上传知识库并让网关自动将相关文档块注入到每个 LLM prompt 中。

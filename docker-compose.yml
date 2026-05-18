@@ -116,10 +116,19 @@ services:
     expose:
       - "50053"
     environment:
-      - COMPL_API_KEY=${COMPL_API_KEY}
-      - COMPL_ENDPOINT=${COMPL_ENDPOINT}
+      # 池配置文件挂载到容器内固定路径,覆盖 .env 中的宿主机绝对路径
+      - COMPL_POOL_CONFIG_FILE=/etc/llm/pool_config.json
+      # pool_config.json 中 api_key_env 引用的上游 key
+      - CLOSEAI_KEY=${CLOSEAI_KEY:-}
+      - DS_KEY=${DS_KEY:-}
+      - ALL_KEY=${ALL_KEY:-}
+      # legacy 单端点兜底(若 pool 文件缺失时三级 fallback 才会用到)
+      - COMPL_API_KEY=${COMPL_API_KEY:-}
+      - COMPL_ENDPOINT=${COMPL_ENDPOINT:-}
       - ETCD_ENDPOINTS=${ETCD_ENDPOINTS:-etcd:2379}
       - ADVERTISE_ADDR=${COMPLETION_ADVERTISE_ADDR:-}
+    volumes:
+      - ./pool_config.json:/etc/llm/pool_config.json:ro
     depends_on:
       - etcd
     networks:

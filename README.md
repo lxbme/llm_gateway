@@ -224,6 +224,8 @@ When `ETCD_ENDPOINTS` is set, every service registers itself under `services/<na
 
 For a worked horizontal-scaling example see [`config/docker-compose.scale.example.yml`](config/docker-compose.scale.example.yml). End-to-end behaviour (lease eviction, gateway failover) is exercised by `test/cli/etcd-e2e-test.sh`.
 
+> 📘 **Deploying across multiple hosts?** See the [Distributed Deployment Guide](docs/distributed_deployment.md) ([中文](docs/distributed_deployment_zh_cn.md)) for the full reference: etcd cluster setup, `ADVERTISE_ADDR` rules, port maps, firewall requirements, and a four-host worked example.
+
 ## RAG (Retrieval-Augmented Generation)
 
 The gateway ships an optional `rag-service` that lets you upload a knowledge base and have relevant document chunks automatically injected into every LLM prompt.

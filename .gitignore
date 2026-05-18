@@ -6,3 +6,4 @@ redis_storage
 test/cli/.env
 .claude
 misc/
+pool_config.json
