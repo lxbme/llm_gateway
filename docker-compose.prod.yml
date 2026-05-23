@@ -117,10 +117,22 @@ services:
     expose:
       - "50053"
     environment:
-      - COMPL_API_KEY=${COMPL_API_KEY}
-      - COMPL_ENDPOINT=${COMPL_ENDPOINT}
+      # Pool config lives inside the container at a fixed path; the actual
+      # host file is bind-mounted below (path is configurable via
+      # POOL_CONFIG_HOST_PATH, default ./pool_config.json).
+      - COMPL_POOL_CONFIG_FILE=/etc/llm/pool_config.json
+      # Upstream keys referenced by api_key_env entries in pool_config.json.
+      - CLOSEAI_KEY=${CLOSEAI_KEY:-}
+      - DS_KEY=${DS_KEY:-}
+      - ALL_KEY=${ALL_KEY:-}
+      # Legacy single-endpoint fallback (used only if the pool file is missing
+      # and COMPL_POOL_CONFIG inline JSON is also unset).
+      - COMPL_API_KEY=${COMPL_API_KEY:-}
+      - COMPL_ENDPOINT=${COMPL_ENDPOINT:-}
       - ETCD_ENDPOINTS=${ETCD_ENDPOINTS:-etcd:2379}
       - ADVERTISE_ADDR=${COMPLETION_ADVERTISE_ADDR:-}
+    volumes:
+      - ${POOL_CONFIG_HOST_PATH:-./pool_config.json}:/etc/llm/pool_config.json:ro
     depends_on:
       - etcd
     networks:

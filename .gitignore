@@ -7,3 +7,4 @@ test/cli/.env
 .claude
 misc/
 pool_config.json
+redis_hnsw_storage

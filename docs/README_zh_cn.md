@@ -39,10 +39,38 @@ cp config/.env.example .env
 
 ### 2. 启动所有服务
 
+仓库提供了一个 helper 脚本，会根据 `.env`（或当前 shell 环境）里的 provider
+自动拼上正确的 Compose overlay：
+
 ```sh
-podman compose -f docker-compose.prod.yml up -d
-# 或者
+# dev 模式（本地构建，使用 docker-compose.yml）
+bash docker-run.sh -d
+
+# prod 模式（拉取预构建的 ghcr.io 镜像，使用 docker-compose.prod.yml）
+bash docker-run.sh --prod -d
+```
+
+也可以直接调用 `docker compose`。不带 overlay 的最小调用：
+
+```sh
 docker compose -f docker-compose.prod.yml up -d
+```
+
+如果 `.env` 中启用了可选后端（`EMBED_PROVIDER=ollama` 或
+`CACHE_STORE_PROVIDER=redis_hnsw`），需要追加对应的 overlay：
+
+```sh
+docker compose \
+  -f docker-compose.prod.yml \
+  -f config/docker-compose.ollama.yml \
+  -f config/docker-compose.hnsw.yml \
+  up -d
+```
+
+关停服务（helper 会自动带上当前 provider 对应的 overlay 集合）：
+
+```sh
+bash docker-run.sh --prod --down
 ```
 
 ### 3. 创建您的第一个 API 令牌

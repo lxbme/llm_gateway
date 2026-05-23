@@ -42,10 +42,38 @@ cp config/.env.example .env
 
 ### 2. Start all services
 
+The repository ships a helper script that auto-selects the right Compose
+overlays based on the providers in `.env` (or the current shell env):
+
 ```sh
-podman compose -f docker-compose.prod.yml up -d
-# or
+# dev profile (local build via docker-compose.yml)
+bash docker-run.sh -d
+
+# prod profile (pre-built ghcr.io images via docker-compose.prod.yml)
+bash docker-run.sh --prod -d
+```
+
+Or invoke `docker compose` directly. Without overlays:
+
+```sh
 docker compose -f docker-compose.prod.yml up -d
+```
+
+With optional backends enabled in `.env` (`EMBED_PROVIDER=ollama` and/or
+`CACHE_STORE_PROVIDER=redis_hnsw`), append the matching overlay(s):
+
+```sh
+docker compose \
+  -f docker-compose.prod.yml \
+  -f config/docker-compose.ollama.yml \
+  -f config/docker-compose.hnsw.yml \
+  up -d
+```
+
+To tear everything down (the helper carries the same overlay set automatically):
+
+```sh
+bash docker-run.sh --prod --down
 ```
 
 ### 3. Create your first API token
