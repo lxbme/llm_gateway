@@ -98,8 +98,22 @@ fi
 # Load provider env (shell wins over .env)
 # ---------------------------------------------------------------------------
 
-shell_embed_provider="${EMBED_PROVIDER:-}"
-shell_cache_provider="${CACHE_STORE_PROVIDER:-}"
+# Snapshot every variable docker-compose's `${...}` substitution will read so
+# that shell-provided overrides survive the `source .env` below. Without this
+# snapshot, a blank or differently-set value in .env silently overwrites what
+# the caller exported (and embedding-service then panics on EMBED_API_KEY="").
+_SHELL_SNAPSHOT_VARS=(
+  EMBED_PROVIDER EMBED_API_KEY EMBED_ENDPOINT EMBED_MODEL EMBED_DIMENSIONS
+  CACHE_STORE_PROVIDER CACHE_MODE CACHE_BUFFER_SIZE CACHE_WORKER_COUNT
+  QDRANT_COLLECTION_NAME QDRANT_SIMILARITY_THRESHOLD
+  REDIS_HNSW_ADDR REDIS_HNSW_INDEX_NAME REDIS_HNSW_KEY_PREFIX
+  REDIS_HNSW_SIMILARITY_THRESHOLD REDIS_HNSW_DISTANCE_METRIC
+  REDIS_HNSW_M REDIS_HNSW_EF_CONSTRUCTION REDIS_HNSW_EF_RUNTIME
+)
+declare -A _SHELL_SNAPSHOT
+for _v in "${_SHELL_SNAPSHOT_VARS[@]}"; do
+  _SHELL_SNAPSHOT[$_v]="${!_v-}"
+done
 
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
@@ -112,9 +126,12 @@ else
   exit 1
 fi
 
-# Restore shell-provided overrides on top of .env values.
-[[ -n "${shell_embed_provider}" ]] && EMBED_PROVIDER="${shell_embed_provider}"
-[[ -n "${shell_cache_provider}" ]] && CACHE_STORE_PROVIDER="${shell_cache_provider}"
+# Restore every shell-provided override on top of whatever .env supplied.
+for _v in "${_SHELL_SNAPSHOT_VARS[@]}"; do
+  if [[ -n "${_SHELL_SNAPSHOT[$_v]+set}" && -n "${_SHELL_SNAPSHOT[$_v]}" ]]; then
+    export "${_v}=${_SHELL_SNAPSHOT[$_v]}"
+  fi
+done
 
 EMBED_PROVIDER="${EMBED_PROVIDER:-}"
 CACHE_STORE_PROVIDER="${CACHE_STORE_PROVIDER:-}"
