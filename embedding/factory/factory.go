@@ -3,6 +3,7 @@ package factory
 import (
 	"fmt"
 	"llm_gateway/embedding"
+	"llm_gateway/embedding/ollama"
 	"llm_gateway/embedding/openai"
 )
 
@@ -11,6 +12,14 @@ func New(cfg embedding.Config) (embedding.Service, error) {
 		svc, err := openai.NewFromEnv()
 		if err != nil {
 			return nil, fmt.Errorf("fail to create openai embedding service: %w", err)
+		}
+		return svc, nil
+	}
+
+	if cfg.Provider == "ollama" {
+		svc, err := ollama.NewFromEnv()
+		if err != nil {
+			return nil, fmt.Errorf("fail to create ollama embedding service: %w", err)
 		}
 		return svc, nil
 	}

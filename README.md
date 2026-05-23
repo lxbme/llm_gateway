@@ -99,32 +99,112 @@ The gateway is fully env-driven, with one exception: `completion-service` suppor
 
 ### Embedding Service (`embedding-service`)
 
+Common variables shared by every provider:
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `EMBED_PROVIDER` | — | **Required.** Embedding provider name, currently `openai` |
-| `EMBED_API_KEY` | — | API key for the embedding provider |
-| `EMBED_ENDPOINT` | — | **Required.** Embedding API endpoint URL |
+| `EMBED_PROVIDER` | — | **Required.** Embedding provider name: `openai` or `ollama` |
+| `EMBED_ENDPOINT` | — | **Required.** Embedding API endpoint URL (provider-specific path) |
 | `EMBED_MODEL` | — | **Required.** Embedding model name |
-| `EMBED_DIMENSIONS` | — | **Required.** Embedding vector dimensions |
+| `EMBED_DIMENSIONS` | — | **Required.** Embedding vector dimensions; must match the model's true output |
 | `SERVE_PORT` | `50051` | gRPC listen port |
+
+`embedding-service` selects its provider using `EMBED_PROVIDER`. Implemented providers: `openai`, `ollama`. Provider-specific variables live in the dedicated subsections below — only the variables matching the selected provider are read.
+
+#### `openai` provider (OpenAI-compatible HTTP API)
+
+Set `EMBED_PROVIDER=openai` to call any OpenAI-compatible `/v1/embeddings` endpoint.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMBED_API_KEY` | — | **Required.** Bearer token sent in the `Authorization` header |
+
+The OpenAI provider sends `{model, input, encoding_format, dimensions}` and parses `data[].embedding` from the response.
+
+#### `ollama` provider (Ollama local models)
+
+Set `EMBED_PROVIDER=ollama` to call a local or self-hosted [Ollama](https://ollama.com/) daemon (`POST /api/embed`).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMBED_API_KEY` | — | *Optional.* Leave empty for default ollama (no auth). Set when fronting ollama with an authenticated reverse proxy |
+
+The Ollama provider sends `{model, input}` and parses `embeddings[0]` from the response. At startup it issues a probe request and **fails fast** if the model's actual vector length differs from `EMBED_DIMENSIONS`.
+
+Example:
+
+```bash
+EMBED_PROVIDER=ollama
+EMBED_ENDPOINT=http://localhost:11434/api/embed
+EMBED_MODEL=qwen3-embedding:0.6b
+EMBED_DIMENSIONS=1024   # must match the model's real output size
+EMBED_API_KEY=          # leave blank for default ollama
+```
+
+To run a containerized `embedding-service` against an ollama daemon on the host, use the bundled overlay so the container resolves `host.docker.internal`:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f config/docker-compose.ollama.yml \
+  up -d --build embedding-service
+```
 
 ### Cache Service (`cache-service`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+Common variables shared by every backend:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `CACHE_MODE` | `semantic` | Cache mode. `semantic` requires an embedding service; `exact` is reserved for future exact-match stores |
-| `CACHE_STORE_PROVIDER` | — | **Required.** Store provider name, currently `qdrant` |
+| `CACHE_STORE_PROVIDER` | — | **Required.** Store provider name: `qdrant` or `redis_hnsw` |
 | `CACHE_PROVIDER` | — | Backward-compatible alias for `CACHE_STORE_PROVIDER` |
 | `CACHE_BUFFER_SIZE` | `1000` | Async cache write queue capacity |
 | `CACHE_WORKER_COUNT` | `5` | Number of async cache workers |
 | `EMBED_ADDR` | `localhost:50051` | Embedding service gRPC address |
+| `SERVE_PORT` | `50052` | gRPC listen port |
+
+`cache-service` selects its backend using `CACHE_MODE + CACHE_STORE_PROVIDER`. Implemented combinations: `semantic + qdrant` and `semantic + redis_hnsw`. When `CACHE_MODE=semantic`, `EMBED_ADDR` must point to a reachable embedding service so the cache can generate vectors before searching or writing. Variables specific to each backend live in the dedicated subsections below — only the variables matching the selected provider are read.
+
+#### `qdrant` provider (Qdrant vector database)
+
+Set `CACHE_STORE_PROVIDER=qdrant` to use a standalone Qdrant instance as the semantic cache backend (default in the bundled `docker-compose.yml`).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `QDRANT_HOST` | `localhost` | Qdrant hostname |
 | `QDRANT_PORT` | `6334` | Qdrant gRPC port |
 | `QDRANT_COLLECTION_NAME` | `llm_semantic_cache` | Qdrant collection used by the semantic cache |
 | `QDRANT_SIMILARITY_THRESHOLD` | `0.95` | Minimum cosine similarity score required for a cache hit |
-| `SERVE_PORT` | `50052` | gRPC listen port |
 
-`cache-service` selects its backend using `CACHE_MODE + CACHE_STORE_PROVIDER`. Currently only `semantic + qdrant` is implemented. When `CACHE_MODE=semantic`, `EMBED_ADDR` must point to a reachable embedding service so the cache can generate vectors before searching or writing.
+#### `redis_hnsw` provider (Redis Stack + RediSearch HNSW)
+
+Set `CACHE_STORE_PROVIDER=redis_hnsw` to use Redis Stack as the semantic cache backend instead of Qdrant. Requires a Redis instance with the RediSearch module loaded (e.g. `redis/redis-stack-server:latest`).
+
+For docker compose deployments, layer the dedicated overlay on top of the main file — **the main `docker-compose.yml` is not modified**:
+
+```bash
+CACHE_STORE_PROVIDER=redis_hnsw docker compose \
+  -f docker-compose.yml -f config/docker-compose.hnsw.yml \
+  up -d --build
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_HNSW_ADDR` | `localhost:6379` | Redis Stack host:port |
+| `REDIS_HNSW_PASSWORD` | _(empty)_ | AUTH password if required |
+| `REDIS_HNSW_DB` | `0` | Logical DB index |
+| `REDIS_HNSW_INDEX_NAME` | `llm_semantic_cache_idx` | RediSearch index name |
+| `REDIS_HNSW_KEY_PREFIX` | `llm_semantic_cache` | Hash key prefix (the index `PREFIX` is `<prefix>:`) |
+| `REDIS_HNSW_SIMILARITY_THRESHOLD` | `0.95` | Minimum similarity (cosine path: `1 - distance >= threshold`) |
+| `REDIS_HNSW_DISTANCE_METRIC` | `COSINE` | `COSINE`, `L2`, or `IP`. Non-cosine values require recalibrating `SIMILARITY_THRESHOLD` |
+| `REDIS_HNSW_M` | `16` | HNSW graph degree |
+| `REDIS_HNSW_EF_CONSTRUCTION` | `200` | HNSW build-time candidate list size |
+| `REDIS_HNSW_EF_RUNTIME` | `10` | HNSW query-time candidate list size; raise for better recall |
+| `REDIS_HNSW_RECORD_TTL_SECONDS` | `0` | Per-record TTL in seconds; `0` = never expire |
+| `REDIS_HNSW_DIAL_TIMEOUT_MS` | `5000` | Redis client dial timeout |
 
 ### Completion Service (`completion-service`)
 

@@ -1,0 +1,39 @@
+# =============================================================================
+# Ollama embedding provider overlay for embedding-service.
+#
+# Switches embedding-service to EMBED_PROVIDER=ollama and runs the container
+# in host network mode so it can reach a default-installed ollama daemon on
+# the host (which binds 127.0.0.1:11434 only). Both the ollama daemon and etcd
+# become reachable via localhost from inside the embedding-service container.
+#
+# Usage:
+#
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f config/docker-compose.ollama.yml \
+#     up -d --build embedding-service
+#
+# Notes:
+#   - host network mode dissociates embedding-service from the ai-net bridge,
+#     which is fine for single-node dev/test setups where ollama is on the same
+#     host. For a production deploy with cross-host peers, prefer running
+#     ollama itself in a sibling container on ai-net and point EMBED_ENDPOINT
+#     at it directly.
+#   - SERVE_PORT (default 50051) and 2379 (etcd) are bound directly on the
+#     host when this overlay is active — make sure they are not already in
+#     use locally.
+#   - EMBED_DIMENSIONS must match the chosen model's true output size or
+#     embedding-service crashes at startup (probe check).
+# =============================================================================
+
+services:
+  embedding-service:
+    network_mode: host
+    networks: !reset null
+    environment:
+      - EMBED_PROVIDER=ollama
+      - EMBED_ENDPOINT=${EMBED_ENDPOINT:-http://localhost:11434/api/embed}
+      - EMBED_MODEL=${EMBED_MODEL:-qwen3-embedding:0.6b}
+      - EMBED_DIMENSIONS=${EMBED_DIMENSIONS:-1024}
+      - EMBED_API_KEY=${EMBED_API_KEY:-}
+      - ETCD_ENDPOINTS=${ETCD_ENDPOINTS:-localhost:2379}

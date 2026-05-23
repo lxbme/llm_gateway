@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"llm_gateway/cache"
 	"llm_gateway/cache/qdrant"
+	redis_hnsw "llm_gateway/cache/redis_hnsw"
 	"llm_gateway/embedding"
 )
 
@@ -59,6 +60,12 @@ func newStore(cfg cache.Config, deps Dependencies) (cache.Store, error) {
 			return nil, fmt.Errorf("failed to create qdrant store: %w", err)
 		}
 		return store, nil
+	case "redis_hnsw":
+		store, err := redis_hnsw.NewFromEnv(deps.Dimensions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create redis_hnsw store: %w", err)
+		}
+		return store, nil
 	default:
 		return nil, fmt.Errorf("unsupported cache store provider: %s", cfg.StoreProvider)
 	}
@@ -68,6 +75,8 @@ func capabilitiesForProvider(provider string) (cache.StoreCapabilities, error) {
 	switch provider {
 	case "qdrant":
 		return qdrant.StaticCapabilities(), nil
+	case "redis_hnsw":
+		return redis_hnsw.StaticCapabilities(), nil
 	default:
 		return cache.StoreCapabilities{}, fmt.Errorf("unsupported cache store provider: %s", provider)
 	}

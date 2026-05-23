@@ -125,32 +125,110 @@ ADMIN_SECRET=change-me-to-a-strong-random-secret
 
 ### 嵌入服务 (`embedding-service`)
 
+所有 provider 通用的变量：
+
 | 变量 | 默认值 | 描述 |
 |------|--------|------|
-| `EMBED_PROVIDER` | — | **必填。** Embedding provider 名称，当前支持 `openai` |
-| `EMBED_API_KEY` | — | 嵌入提供商的 API 密钥 |
-| `EMBED_ENDPOINT` | — | **必填。** 嵌入 API 端点 URL |
+| `EMBED_PROVIDER` | — | **必填。** Embedding provider 名称：`openai` 或 `ollama` |
+| `EMBED_ENDPOINT` | — | **必填。** 嵌入 API 端点 URL（不同 provider 的路径不同） |
 | `EMBED_MODEL` | — | **必填。** Embedding 模型名称 |
-| `EMBED_DIMENSIONS` | — | **必填。** 向量维度 |
+| `EMBED_DIMENSIONS` | — | **必填。** 向量维度；必须与模型真实输出一致 |
 | `SERVE_PORT` | `50051` | gRPC 监听端口 |
 
+`embedding-service` 通过 `EMBED_PROVIDER` 选择 provider。已实现的 provider：`openai`、`ollama`。下面各小节列出每个 provider 专属的变量 —— 只有匹配所选 provider 的变量才会被读取。
+
+#### `openai` provider（OpenAI 兼容 HTTP API）
+
+设置 `EMBED_PROVIDER=openai` 即可调用任何 OpenAI 兼容的 `/v1/embeddings` 端点。
+
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
+| `EMBED_API_KEY` | — | **必填。** 写入 `Authorization` 头的 Bearer token |
+
+请求体包含 `{model, input, encoding_format, dimensions}`，从响应的 `data[].embedding` 解析向量。
+
+#### `ollama` provider（Ollama 本地模型）
+
+设置 `EMBED_PROVIDER=ollama` 调用本地或自托管的 [Ollama](https://ollama.com/) daemon（`POST /api/embed`）。
+
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
+| `EMBED_API_KEY` | — | *可选。* 默认 ollama 无需鉴权，留空即可；前置鉴权反向代理时再填 |
+
+请求体只含 `{model, input}`，从响应的 `embeddings[0]` 解析向量。启动时会发起一次 probe 请求，**若模型实际维度与 `EMBED_DIMENSIONS` 不一致则立刻 fail**。
+
+示例：
+
+```bash
+EMBED_PROVIDER=ollama
+EMBED_ENDPOINT=http://localhost:11434/api/embed
+EMBED_MODEL=qwen3-embedding:0.6b
+EMBED_DIMENSIONS=1024   # 必须与模型实际输出维度一致
+EMBED_API_KEY=          # 默认 ollama 留空
+```
+
+若要让容器内的 `embedding-service` 访问宿主机的 ollama，使用项目自带的 overlay 解析 `host.docker.internal`：
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f config/docker-compose.ollama.yml \
+  up -d --build embedding-service
+```
+
 ### 缓存服务 (`cache-service`)
+
+所有后端通用的变量：
 
 | 变量 | 默认值 | 描述 |
 |------|--------|------|
 | `CACHE_MODE` | `semantic` | 缓存模式。`semantic` 需要 embedding 服务；`exact` 预留给未来的精确匹配存储 |
-| `CACHE_STORE_PROVIDER` | — | **必填。** 底层 store provider 名称，当前支持 `qdrant` |
+| `CACHE_STORE_PROVIDER` | — | **必填。** 底层 store provider 名称：`qdrant` 或 `redis_hnsw` |
 | `CACHE_PROVIDER` | — | `CACHE_STORE_PROVIDER` 的兼容别名 |
 | `CACHE_BUFFER_SIZE` | `1000` | 异步缓存写入队列容量 |
 | `CACHE_WORKER_COUNT` | `5` | 异步缓存 worker 数量 |
 | `EMBED_ADDR` | `localhost:50051` | 嵌入服务 gRPC 地址 |
+| `SERVE_PORT` | `50052` | gRPC 监听端口 |
+
+`cache-service` 通过 `CACHE_MODE + CACHE_STORE_PROVIDER` 选择底层实现。已实现的组合：`semantic + qdrant` 与 `semantic + redis_hnsw`。当 `CACHE_MODE=semantic` 时，`EMBED_ADDR` 必须指向可用的 embedding 服务，缓存服务会先生成向量，再执行查询或写入。每个后端独有的变量见下方对应小节，缓存服务只读取所选 provider 对应的那一组变量。
+
+#### `qdrant` provider（Qdrant 向量数据库）
+
+设置 `CACHE_STORE_PROVIDER=qdrant` 即可使用独立的 Qdrant 实例作为语义缓存后端（默认 `docker-compose.yml` 已经预配置）。
+
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
 | `QDRANT_HOST` | `localhost` | Qdrant 主机名 |
 | `QDRANT_PORT` | `6334` | Qdrant gRPC 端口 |
 | `QDRANT_COLLECTION_NAME` | `llm_semantic_cache` | 语义缓存使用的 Qdrant collection 名称 |
 | `QDRANT_SIMILARITY_THRESHOLD` | `0.95` | 判定缓存命中的最低余弦相似度阈值 |
-| `SERVE_PORT` | `50052` | gRPC 监听端口 |
 
-`cache-service` 通过 `CACHE_MODE + CACHE_STORE_PROVIDER` 选择底层实现。当前版本只实现了 `semantic + qdrant`。当 `CACHE_MODE=semantic` 时，`EMBED_ADDR` 必须指向可用的 embedding 服务，缓存服务会先生成向量，再执行查询或写入。
+#### `redis_hnsw` provider（Redis Stack + RediSearch HNSW）
+
+设置 `CACHE_STORE_PROVIDER=redis_hnsw` 即可改用 Redis Stack 作为语义缓存后端，不再依赖 Qdrant。要求 Redis 实例已加载 RediSearch 模块（如 `redis/redis-stack-server:latest`）。
+
+容器部署时叠加专用 overlay，**主 `docker-compose.yml` 保持不变**：
+
+```bash
+CACHE_STORE_PROVIDER=redis_hnsw docker compose \
+  -f docker-compose.yml -f config/docker-compose.hnsw.yml \
+  up -d --build
+```
+
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
+| `REDIS_HNSW_ADDR` | `localhost:6379` | Redis Stack 主机:端口 |
+| `REDIS_HNSW_PASSWORD` | _(空)_ | AUTH 密码（如启用） |
+| `REDIS_HNSW_DB` | `0` | 逻辑 DB 编号 |
+| `REDIS_HNSW_INDEX_NAME` | `llm_semantic_cache_idx` | RediSearch 索引名 |
+| `REDIS_HNSW_KEY_PREFIX` | `llm_semantic_cache` | Hash 键前缀（索引 `PREFIX` 为 `<prefix>:`） |
+| `REDIS_HNSW_SIMILARITY_THRESHOLD` | `0.95` | 命中阈值（cosine 路径：`1 - distance >= threshold`） |
+| `REDIS_HNSW_DISTANCE_METRIC` | `COSINE` | `COSINE` / `L2` / `IP`。非 cosine 时需重新校准阈值 |
+| `REDIS_HNSW_M` | `16` | HNSW 图度数 |
+| `REDIS_HNSW_EF_CONSTRUCTION` | `200` | 构图候选数 |
+| `REDIS_HNSW_EF_RUNTIME` | `10` | 查询候选数；调大可换更高召回 |
+| `REDIS_HNSW_RECORD_TTL_SECONDS` | `0` | 单条记录 TTL（秒），`0` 表示不过期 |
+| `REDIS_HNSW_DIAL_TIMEOUT_MS` | `5000` | Redis 客户端连接超时 |
 
 ### Completion服务 (`completion-service`)
 
