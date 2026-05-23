@@ -69,9 +69,11 @@ func (c *Client) GetStream(ctx context.Context, req *completion.CompletionReques
 
 			// Convert pb.CompletionChunk to completion.CompletionChunk
 			chunk := &completion.CompletionChunk{
-				Content:    pbChunk.Content,
-				Done:       pbChunk.Done,
-				TokenUsage: int(pbChunk.TokenUsage),
+				Content:          pbChunk.Content,
+				Done:             pbChunk.Done,
+				TokenUsage:       int(pbChunk.TokenUsage),
+				PromptTokens:     int(pbChunk.PromptTokens),
+				CompletionTokens: int(pbChunk.CompletionTokens),
 			}
 			if pbChunk.Error != "" {
 				chunk.Error = fmt.Errorf("%s", pbChunk.Error)

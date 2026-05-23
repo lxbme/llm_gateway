@@ -52,17 +52,19 @@ func (s *OpenaiCompletionService) GetStream(ctx context.Context, req *completion
 		defer resp.Body.Close()
 
 		reader := bufio.NewReader(resp.Body)
-		var totalTokens int
+		var totalTokens, promptTokens, completionTokens int
 
 		for {
 			// Check if context is cancelled
 			select {
 			case <-ctx.Done():
 				ch <- &completion.CompletionChunk{
-					Content:    "",
-					Error:      ctx.Err(),
-					Done:       true,
-					TokenUsage: totalTokens,
+					Content:          "",
+					Error:            ctx.Err(),
+					Done:             true,
+					TokenUsage:       totalTokens,
+					PromptTokens:     promptTokens,
+					CompletionTokens: completionTokens,
 				}
 				return
 			default:
@@ -73,19 +75,23 @@ func (s *OpenaiCompletionService) GetStream(ctx context.Context, req *completion
 				if err == io.EOF {
 					// Stream completed successfully
 					ch <- &completion.CompletionChunk{
-						Content:    "",
-						Error:      nil,
-						Done:       true,
-						TokenUsage: totalTokens,
+						Content:          "",
+						Error:            nil,
+						Done:             true,
+						TokenUsage:       totalTokens,
+						PromptTokens:     promptTokens,
+						CompletionTokens: completionTokens,
 					}
 					return
 				}
 				// Read error
 				ch <- &completion.CompletionChunk{
-					Content:    "",
-					Error:      fmt.Errorf("failed to read from upstream: %w", err),
-					Done:       true,
-					TokenUsage: totalTokens,
+					Content:          "",
+					Error:            fmt.Errorf("failed to read from upstream: %w", err),
+					Done:             true,
+					TokenUsage:       totalTokens,
+					PromptTokens:     promptTokens,
+					CompletionTokens: completionTokens,
 				}
 				return
 			}
@@ -96,15 +102,21 @@ func (s *OpenaiCompletionService) GetStream(ctx context.Context, req *completion
 			}
 
 			// Parse SSE line
-			content, done, tokenUsage, err := s.parseSSELine(line)
+			content, done, pt, ct, tt, err := s.parseSSELine(line)
 			if err != nil {
 				// Non-fatal parse error, continue
 				continue
 			}
 
-			// Update total tokens if received
-			if tokenUsage > 0 {
-				totalTokens = tokenUsage
+			// Update token counters as they arrive
+			if tt > 0 {
+				totalTokens = tt
+			}
+			if pt > 0 {
+				promptTokens = pt
+			}
+			if ct > 0 {
+				completionTokens = ct
 			}
 
 			if content != "" {
@@ -118,10 +130,12 @@ func (s *OpenaiCompletionService) GetStream(ctx context.Context, req *completion
 
 			if done {
 				ch <- &completion.CompletionChunk{
-					Content:    "",
-					Error:      nil,
-					Done:       true,
-					TokenUsage: totalTokens,
+					Content:          "",
+					Error:            nil,
+					Done:             true,
+					TokenUsage:       totalTokens,
+					PromptTokens:     promptTokens,
+					CompletionTokens: completionTokens,
 				}
 				return
 			}
@@ -144,6 +158,10 @@ func (s *OpenaiCompletionService) buildUpstreamRequest(ctx context.Context, orig
 		Temperature: original_req.Temperature,
 		MaxTokens:   original_req.MaxTokens,
 		Stream:      true,
+		// Ask upstream to emit a final SSE chunk containing usage info.
+		// OpenAI's streaming API omits usage by default — without this flag
+		// the gateway can never forward token counts to the client.
+		StreamOptions: &StreamOptions{IncludeUsage: true},
 	}
 
 	reqBodyBytes, err := json.Marshal(openaiReq)
@@ -167,15 +185,16 @@ func (s *OpenaiCompletionService) buildUpstreamRequest(ctx context.Context, orig
 	return req, nil
 }
 
-// parseSSELine parses a single SSE line and returns (content, isDone, tokenUsage, error)
-func (s *OpenaiCompletionService) parseSSELine(line []byte) (string, bool, int, error) {
+// parseSSELine parses a single SSE line and returns
+// (content, isDone, promptTokens, completionTokens, totalTokens, error).
+func (s *OpenaiCompletionService) parseSSELine(line []byte) (string, bool, int, int, int, error) {
 	if len(line) == 0 {
-		return "", false, 0, nil
+		return "", false, 0, 0, 0, nil
 	}
 
 	// Check for "data: " prefix
 	if !bytes.HasPrefix(line, []byte("data: ")) {
-		return "", false, 0, fmt.Errorf("invalid SSE line, missing 'data: ' prefix")
+		return "", false, 0, 0, 0, fmt.Errorf("invalid SSE line, missing 'data: ' prefix")
 	}
 
 	// Extract JSON part
@@ -183,31 +202,34 @@ func (s *OpenaiCompletionService) parseSSELine(line []byte) (string, bool, int, 
 
 	// Check for [DONE] marker
 	if bytes.Equal(jsonBytes, []byte("[DONE]")) {
-		return "", true, 0, nil
+		return "", true, 0, 0, 0, nil
 	}
 
 	// Parse JSON response
 	var resp ChatStreamResponse
 	if err := json.Unmarshal(jsonBytes, &resp); err != nil {
-		return "", false, 0, fmt.Errorf("fail to unmarshal SSE json: %w", err)
+		return "", false, 0, 0, 0, fmt.Errorf("fail to unmarshal SSE json: %w", err)
 	}
 
-	// Handle usage info (last block)
-	if resp.Usage != nil && resp.Usage.TotalTokens != 0 {
-		return "", false, resp.Usage.TotalTokens, nil
+	// Handle usage info (last block before [DONE] when stream_options.include_usage is set)
+	if resp.Usage != nil && (resp.Usage.TotalTokens != 0 || resp.Usage.PromptTokens != 0 || resp.Usage.CompletionTokens != 0) {
+		return "", false, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens, nil
 	}
 
 	// Extract content from choices
 	if len(resp.Choices) == 0 {
-		return "", false, 0, nil
+		return "", false, 0, 0, 0, nil
 	}
 
 	choice := resp.Choices[0]
 
-	// Check if stream is finished
+	// finish_reason marks the end of generated content, but the upstream may
+	// still emit one more chunk carrying usage info when stream_options
+	// include_usage=true is set. We rely on either [DONE] or EOF (handled by
+	// the caller) to terminate; finish_reason alone is not a terminator.
 	if choice.FinishReason != "" {
-		return "", true, 0, nil
+		return "", false, 0, 0, 0, nil
 	}
 
-	return choice.Delta.Content, false, 0, nil
+	return choice.Delta.Content, false, 0, 0, 0, nil
 }

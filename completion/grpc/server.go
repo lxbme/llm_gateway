@@ -43,9 +43,11 @@ func (s *Server) GetStream(req *pb.CompletionRequest, stream pb.CompletionServic
 	// Stream the chunks back to the client
 	for chunk := range chunkChan {
 		pbChunk := &pb.CompletionChunk{
-			Content:    chunk.Content,
-			Done:       chunk.Done,
-			TokenUsage: int32(chunk.TokenUsage),
+			Content:          chunk.Content,
+			Done:             chunk.Done,
+			TokenUsage:       int32(chunk.TokenUsage),
+			PromptTokens:     int32(chunk.PromptTokens),
+			CompletionTokens: int32(chunk.CompletionTokens),
 		}
 		if chunk.Error != nil {
 			pbChunk.Error = chunk.Error.Error()

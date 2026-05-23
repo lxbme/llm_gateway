@@ -205,6 +205,28 @@ func (s *Server) streamUpstreamResponse(gw *GatewayContext, chunks <-chan *compl
 
 		if chunk.Done {
 			gw.Upstream.Finished = true
+
+			// OpenAI-style usage chunk: empty choices + populated usage field.
+			// Emitted before the finish chunk so clients that stop at finish_reason
+			// still see usage. Skipped when upstream did not return any counts
+			// (e.g. providers that ignore stream_options.include_usage).
+			if chunk.PromptTokens > 0 || chunk.CompletionTokens > 0 || chunk.TokenUsage > 0 {
+				usageResponse := map[string]interface{}{
+					"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
+					"object":  "chat.completion.chunk",
+					"created": time.Now().Unix(),
+					"model":   gw.Route.Model,
+					"choices": []interface{}{},
+					"usage": map[string]int{
+						"prompt_tokens":     chunk.PromptTokens,
+						"completion_tokens": chunk.CompletionTokens,
+						"total_tokens":      chunk.TokenUsage,
+					},
+				}
+				usageJSON, _ := json.Marshal(usageResponse)
+				_, _ = fmt.Fprintf(gw.Response.Writer, "data: %s\n\n", string(usageJSON))
+			}
+
 			finishResponse := map[string]interface{}{
 				"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
 				"object":  "chat.completion.chunk",

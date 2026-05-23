@@ -9,8 +9,10 @@ type CompletionRequest struct {
 }
 
 type CompletionChunk struct {
-	Content    string
-	Error      error
-	Done       bool
-	TokenUsage int
+	Content          string
+	Error            error
+	Done             bool
+	TokenUsage       int // total_tokens; kept as-is so existing readers (cache writeback) stay unchanged
+	PromptTokens     int
+	CompletionTokens int
 }

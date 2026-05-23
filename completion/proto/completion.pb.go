@@ -98,13 +98,15 @@ func (x *CompletionRequest) GetStream() bool {
 }
 
 type CompletionChunk struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Content       string                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
-	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
-	Done          bool                   `protobuf:"varint,3,opt,name=done,proto3" json:"done,omitempty"`
-	TokenUsage    int32                  `protobuf:"varint,4,opt,name=token_usage,json=tokenUsage,proto3" json:"token_usage,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Content          string                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
+	Error            string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Done             bool                   `protobuf:"varint,3,opt,name=done,proto3" json:"done,omitempty"`
+	TokenUsage       int32                  `protobuf:"varint,4,opt,name=token_usage,json=tokenUsage,proto3" json:"token_usage,omitempty"` // total_tokens; kept for backward compat
+	PromptTokens     int32                  `protobuf:"varint,5,opt,name=prompt_tokens,json=promptTokens,proto3" json:"prompt_tokens,omitempty"`
+	CompletionTokens int32                  `protobuf:"varint,6,opt,name=completion_tokens,json=completionTokens,proto3" json:"completion_tokens,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CompletionChunk) Reset() {
@@ -161,6 +163,20 @@ func (x *CompletionChunk) GetDone() bool {
 func (x *CompletionChunk) GetTokenUsage() int32 {
 	if x != nil {
 		return x.TokenUsage
+	}
+	return 0
+}
+
+func (x *CompletionChunk) GetPromptTokens() int32 {
+	if x != nil {
+		return x.PromptTokens
+	}
+	return 0
+}
+
+func (x *CompletionChunk) GetCompletionTokens() int32 {
+	if x != nil {
+		return x.CompletionTokens
 	}
 	return 0
 }
@@ -813,13 +829,15 @@ const file_completion_proto_completion_proto_rawDesc = "" +
 	"\vtemperature\x18\x03 \x01(\x01R\vtemperature\x12\x1d\n" +
 	"\n" +
 	"max_tokens\x18\x04 \x01(\x05R\tmaxTokens\x12\x16\n" +
-	"\x06stream\x18\x05 \x01(\bR\x06stream\"v\n" +
+	"\x06stream\x18\x05 \x01(\bR\x06stream\"\xc8\x01\n" +
 	"\x0fCompletionChunk\x12\x18\n" +
 	"\acontent\x18\x01 \x01(\tR\acontent\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x12\n" +
 	"\x04done\x18\x03 \x01(\bR\x04done\x12\x1f\n" +
 	"\vtoken_usage\x18\x04 \x01(\x05R\n" +
-	"tokenUsage\"\x12\n" +
+	"tokenUsage\x12#\n" +
+	"\rprompt_tokens\x18\x05 \x01(\x05R\fpromptTokens\x12+\n" +
+	"\x11completion_tokens\x18\x06 \x01(\x05R\x10completionTokens\"\x12\n" +
 	"\x10PoolStatsRequest\"K\n" +
 	"\x11PoolStatsResponse\x126\n" +
 	"\tendpoints\x18\x01 \x03(\v2\x18.completion.EndpointStatR\tendpoints\"\x95\x02\n" +

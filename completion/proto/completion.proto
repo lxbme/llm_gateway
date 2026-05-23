@@ -30,7 +30,9 @@ message CompletionChunk {
     string content = 1;
     string error = 2;
     bool done = 3;
-    int32 token_usage = 4;
+    int32 token_usage = 4;  // total_tokens; kept for backward compat
+    int32 prompt_tokens = 5;
+    int32 completion_tokens = 6;
 }
 
 message PoolStatsRequest {}
