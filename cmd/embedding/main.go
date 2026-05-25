@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -13,6 +13,7 @@ import (
 	"llm_gateway/embedding/factory"
 	embeddinggrpc "llm_gateway/embedding/grpc"
 	"llm_gateway/internal/discovery"
+	"llm_gateway/internal/logging"
 	"llm_gateway/internal/metrics"
 	"llm_gateway/internal/tracing"
 
@@ -27,6 +28,8 @@ import (
 const serviceName = "embedding"
 
 func main() {
+	logging.Init(serviceName)
+
 	servePort := os.Getenv("SERVE_PORT")
 	if servePort == "" {
 		servePort = "50051"
@@ -34,7 +37,7 @@ func main() {
 
 	tracingShutdown, err := tracing.Init(context.Background(), serviceName)
 	if err != nil {
-		log.Printf("[Warn] tracing init failed: %v", err)
+		slog.Warn("tracing init failed", "err", err)
 	}
 	defer func() { _ = tracingShutdown(context.Background()) }()
 
@@ -50,7 +53,8 @@ func main() {
 
 	lis, err := net.Listen("tcp", ":"+servePort)
 	if err != nil {
-		log.Fatalf("Failed to listen:  %v", err)
+		slog.Error("listen failed", "port", servePort, "err", err)
+		os.Exit(1)
 	}
 
 	s := grpc.NewServer(
@@ -70,29 +74,32 @@ func main() {
 
 	advertiseAddr, err := discovery.AdvertiseAddr(servePort)
 	if err != nil {
-		log.Fatalf("Failed to resolve advertise addr: %v", err)
+		slog.Error("resolve advertise addr failed", "err", err)
+		os.Exit(1)
 	}
 	registerCtx, registerCancel := context.WithCancel(context.Background())
 	defer registerCancel()
 	deregister, err := discovery.Register(registerCtx, serviceName, advertiseAddr)
 	if err != nil {
-		log.Fatalf("Failed to register with discovery: %v", err)
+		slog.Error("discovery register failed", "err", err)
+		os.Exit(1)
 	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-stop
-		fmt.Printf("[Info] Embedding received signal %s, shutting down\n", sig)
+		slog.Info("shutdown signal received", "signal", sig.String())
 		healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 		healthSrv.SetServingStatus(serviceName, healthpb.HealthCheckResponse_NOT_SERVING)
 		deregister()
 		s.GracefulStop()
 	}()
 
-	fmt.Printf("[Info] Embedding gRPC server listening on port %s, advertise=%s\n", servePort, advertiseAddr)
+	slog.Info("grpc server listening", "port", servePort, "advertise", advertiseAddr)
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve: %v", err)
+		slog.Error("serve failed", "err", err)
+		os.Exit(1)
 	}
 }
 
@@ -102,8 +109,8 @@ func startMetricsServer() {
 		port = "9090"
 	}
 	addr := ":" + port
-	log.Printf("[Info] Metrics endpoint at %s/metrics", addr)
+	slog.Info("metrics endpoint listening", "addr", addr)
 	if err := metrics.Serve(addr); err != nil {
-		log.Printf("[Error] Metrics server stopped: %v", err)
+		slog.Error("metrics server stopped", "err", err)
 	}
 }

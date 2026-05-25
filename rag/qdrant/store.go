@@ -3,6 +3,7 @@ package qdrant
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"llm_gateway/rag"
@@ -183,7 +184,7 @@ func (s *Store) createCollection() error {
 		if err != nil {
 			return fmt.Errorf("fail to create collection: %w", err)
 		}
-		fmt.Printf("[Info] Created Qdrant RAG collection: %s\n", s.collectionName)
+		slog.Info("rag qdrant collection created", "collection", s.collectionName)
 		return nil
 	}
 
@@ -204,7 +205,8 @@ func (s *Store) createCollection() error {
 		)
 	}
 
-	fmt.Printf("[Info] Reusing Qdrant RAG collection: %s (dimensions=%d)\n", s.collectionName, existingDim)
+	slog.Info("rag qdrant collection reused",
+		"collection", s.collectionName, "dimensions", existingDim)
 	return nil
 }
 

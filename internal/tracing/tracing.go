@@ -43,7 +43,7 @@ package tracing
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -85,7 +85,8 @@ func Init(ctx context.Context, service string) (func(context.Context) error, err
 
 	endpoint := strings.TrimSpace(os.Getenv(envOTLPEndpoint))
 	if endpoint == "" {
-		log.Printf("[Info] tracing disabled (%s unset) service=%s", envOTLPEndpoint, service)
+		slog.InfoContext(ctx, "tracing disabled (otlp endpoint env unset)",
+			"env", envOTLPEndpoint, "target_service", service)
 		return noopShutdown, nil
 	}
 
@@ -124,7 +125,8 @@ func Init(ctx context.Context, service string) (func(context.Context) error, err
 		sdktrace.WithResource(res),
 	)
 	otel.SetTracerProvider(tp)
-	log.Printf("[Info] tracing enabled service=%s endpoint=%s", service, target)
+	slog.InfoContext(ctx, "tracing enabled",
+		"target_service", service, "endpoint", target)
 	return tp.Shutdown, nil
 }
 
@@ -133,6 +135,50 @@ func Init(ctx context.Context, service string) (func(context.Context) error, err
 // impossible (the lookup is cheap; do not cache the returned value).
 func Tracer(name string) trace.Tracer {
 	return otel.Tracer(name)
+}
+
+// AddEvent attaches a timestamped OTel event to the span currently active in
+// ctx. If no span is active (or it's the noop span) this is a silent no-op —
+// safe to call from any code path without checking whether tracing is enabled.
+//
+// Event naming convention: same dotted form as spans, e.g.
+//
+//	gateway.stage
+//	gateway.cache.result
+//	completion.retry.attempt
+//	completion.endpoint.selected
+//	completion.endpoint.failed
+//	completion.retry.succeeded
+//	completion.retry.exhausted
+//	completion.endpoints.filtered
+//	completion.breaker.rejected
+//
+// Event attributes follow the same SENSITIVE ATTRIBUTE RULES as span
+// attributes (see file header) — never carry prompt content, api_key,
+// bearer_token, user_id, full upstream URLs, or raw cache keys. Error
+// messages must be truncated (see TruncateErr) and accompanied by an
+// error_class enum value.
+func AddEvent(ctx context.Context, name string, attrs ...attribute.KeyValue) {
+	span := trace.SpanFromContext(ctx)
+	if !span.SpanContext().IsValid() {
+		return
+	}
+	span.AddEvent(name, trace.WithAttributes(attrs...))
+}
+
+// TruncateErr returns err.Error() truncated to maxLen runes, with an
+// "...[truncated]" suffix if the message was clipped. Use when stashing an
+// upstream error string into an event/span attribute — full error messages
+// can leak prompt fragments or upstream URLs and are typically unbounded.
+func TruncateErr(err error, maxLen int) string {
+	if err == nil {
+		return ""
+	}
+	s := err.Error()
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "...[truncated]"
 }
 
 func envOr(key, def string) string {

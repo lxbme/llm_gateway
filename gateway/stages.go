@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -83,7 +84,7 @@ func handleCORSStage(gw *GatewayContext) StageResult {
 
 func handleRateLimitStage(gw *GatewayContext) StageResult {
 	if !rateLimiter.Allow() {
-		logWarn("Hit rate limit (token bucket)")
+		slog.WarnContext(gw.Context, "rate limit hit", "limiter", "token_bucket")
 		gw.Response.DirectResponse = newJSONDirectResponse(
 			http.StatusTooManyRequests,
 			map[string]any{
@@ -100,7 +101,7 @@ func handleRateLimitStage(gw *GatewayContext) StageResult {
 	case parallelSemaphore <- struct{}{}:
 		gw.Runtime.ParallelSlotAcquired = true
 	default:
-		logWarn("Hit rate limit (semaphore)")
+		slog.WarnContext(gw.Context, "rate limit hit", "limiter", "semaphore")
 		gw.Response.DirectResponse = newJSONDirectResponse(
 			http.StatusTooManyRequests,
 			map[string]any{
@@ -144,7 +145,7 @@ func handleTokenExtractStage(gw *GatewayContext) StageResult {
 func handleRequestDecodeStage(gw *GatewayContext) StageResult {
 	bodyBytes, err := io.ReadAll(gw.Request.Raw.Body)
 	if err != nil {
-		logError("Failed to read user request: %s", err)
+		slog.ErrorContext(gw.Context, "read request body failed", "err", err)
 		gw.Response.DirectResponse = newJSONDirectResponse(
 			http.StatusBadRequest,
 			map[string]string{"error": "Failed to parse user request"},
@@ -157,7 +158,7 @@ func handleRequestDecodeStage(gw *GatewayContext) StageResult {
 
 	var userReq ChatCompleteionRequest
 	if err := json.Unmarshal(bodyBytes, &userReq); err != nil {
-		logError("Failed to parse user request: %s", err)
+		slog.ErrorContext(gw.Context, "parse request body failed", "err", err)
 		gw.Response.DirectResponse = newJSONDirectResponse(
 			http.StatusBadRequest,
 			map[string]string{"error": "Failed to parse user request"},
@@ -178,11 +179,10 @@ func handlePromptBuildStage(gw *GatewayContext) StageResult {
 	gw.Request.NormalizedKey = gw.Request.PromptText
 	gw.Route.Model = gw.Request.Chat.Model
 
-	logDebug(
-		"Parsed request: model=%s, stream=%v, messages=%d",
-		gw.Request.Chat.Model,
-		gw.Request.Chat.Stream,
-		len(gw.Request.Chat.Messages),
+	slog.DebugContext(gw.Context, "request parsed",
+		"model", gw.Request.Chat.Model,
+		"stream", gw.Request.Chat.Stream,
+		"messages", len(gw.Request.Chat.Messages),
 	)
 	return StageResult{Action: ActionContinue}
 }
@@ -190,7 +190,7 @@ func handlePromptBuildStage(gw *GatewayContext) StageResult {
 func handleAuthValidateStage(gw *GatewayContext) StageResult {
 	isValid, alias, err := gw.Services.Auth.Get(gw.Context, gw.Auth.BearerToken)
 	if err != nil {
-		logError("AuthCheckMiddleware: auth service error: %s", err)
+		slog.ErrorContext(gw.Context, "auth service error", "err", err)
 		gw.Response.DirectResponse = invalidAPIKeyResponse("Authentication service unavailable")
 		return StageResult{Action: ActionReject, StatusCode: http.StatusUnauthorized, Message: "Authentication service unavailable", Err: err}
 	}
@@ -209,7 +209,7 @@ func handleMockResponseStage(gw *GatewayContext) StageResult {
 		return StageResult{Action: ActionContinue}
 	}
 
-	logDebug("x-mock: true")
+	slog.DebugContext(gw.Context, "mock response requested", "header", "x-mock")
 	gw.Response.DirectResponse = &DirectResponse{
 		Kind:       DirectResponseMockStream,
 		StatusCode: http.StatusOK,
@@ -222,22 +222,35 @@ func handleCacheLookupStage(gw *GatewayContext) StageResult {
 	ctx, span := tracing.Tracer("gateway").Start(gw.Context, "gateway.cache.lookup")
 	defer span.End()
 
+	// emitResult records the result on the child cache.lookup span (for span
+	// queries / metrics-via-trace) AND as an event on the parent gateway.http
+	// span so the result is visible inline on the request timeline view —
+	// child-span attributes do not show up on the parent's event list in
+	// Tempo, so the event is what makes "did this hit?" scannable.
+	emitResult := func(result string, latency time.Duration) {
+		span.SetAttributes(attribute.String("cache.result", result))
+		tracing.AddEvent(gw.Context, "gateway.cache.result",
+			attribute.String("result", result),
+			attribute.Int64("latency_ms", latency.Milliseconds()),
+		)
+	}
+
 	start := time.Now()
 	cacheAnswer, isHit, err := gw.Services.Cache.Get(ctx, gw.Request.NormalizedKey, gw.Route.Model)
 	metrics.CacheLookupLatencySec.Observe(time.Since(start).Seconds())
 	if err != nil {
 		metrics.CacheLookupTotal.WithLabelValues("error").Inc()
-		span.SetAttributes(attribute.String("cache.result", "error"))
-		logError("Failed to search similar vector in qdrant: %s", err)
+		emitResult("error", time.Since(start))
+		slog.ErrorContext(gw.Context, "cache lookup failed", "err", err)
 		return StageResult{Action: ActionContinue}
 	}
 	if !isHit {
 		metrics.CacheLookupTotal.WithLabelValues("miss").Inc()
-		span.SetAttributes(attribute.String("cache.result", "miss"))
+		emitResult("miss", time.Since(start))
 		return StageResult{Action: ActionContinue}
 	}
 	metrics.CacheLookupTotal.WithLabelValues("hit").Inc()
-	span.SetAttributes(attribute.String("cache.result", "hit"))
+	emitResult("hit", time.Since(start))
 
 	gw.Response.FromCache = true
 	gw.Response.DirectResponse = &DirectResponse{
@@ -268,7 +281,7 @@ func handleStreamChunkStage(gw *GatewayContext) StageResult {
 	}
 
 	if chunk.Error != nil {
-		logError("Stream error: %s", chunk.Error)
+		slog.ErrorContext(gw.Context, "upstream stream error", "err", chunk.Error)
 		gw.Upstream.Error = chunk.Error
 		return StageResult{Action: ActionContinue}
 	}
@@ -279,7 +292,7 @@ func handleStreamChunkStage(gw *GatewayContext) StageResult {
 
 	if chunk.Done {
 		gw.Stream.TokenUsage = chunk.TokenUsage
-		logDebug("Stream completed successfully")
+		slog.DebugContext(gw.Context, "upstream stream completed")
 	}
 
 	return StageResult{Action: ActionContinue}
@@ -294,7 +307,7 @@ func handleCacheWritebackStage(gw *GatewayContext) StageResult {
 	// depends on external documents that can be added or deleted at any time,
 	// so caching such responses would return stale answers after document changes.
 	if count, ok := gw.Data["rag_chunks_count"].(int); ok && count > 0 {
-		logDebug("Skipping cache write: response was RAG-augmented (%d chunks)", count)
+		slog.DebugContext(gw.Context, "cache write skipped (rag-augmented)", "chunks", count)
 		return StageResult{Action: ActionContinue}
 	}
 
@@ -305,7 +318,7 @@ func handleCacheWritebackStage(gw *GatewayContext) StageResult {
 		TokenUsage: gw.Stream.TokenUsage,
 	})
 	if err != nil {
-		logError("Failed to save cache: %s", err)
+		slog.ErrorContext(gw.Context, "cache write failed", "err", err)
 	}
 
 	return StageResult{Action: ActionContinue}
@@ -316,7 +329,7 @@ func handleAuditLogStage(gw *GatewayContext) StageResult {
 	if answerText == "" && gw.Response.DirectResponse != nil && gw.Response.DirectResponse.Kind == DirectResponseCachedStream {
 		answerText = gw.Response.DirectResponse.CachedAnswer
 	}
-	printDialog(gw.Request.PromptText, answerText)
+	auditDialog(gw.Context, gw.Request.PromptText, answerText)
 	return StageResult{Action: ActionContinue}
 }
 

@@ -1,5 +1,13 @@
 package gateway
 
+import (
+	"time"
+
+	"llm_gateway/internal/tracing"
+
+	"go.opentelemetry.io/otel/attribute"
+)
+
 type StageName string
 
 const (
@@ -60,7 +68,14 @@ func (p *Pipeline) RunStage(stage StageName, gw *GatewayContext) (StageResult, b
 	}
 
 	for _, handler := range handlers {
+		start := time.Now()
 		result := handler.Handle(gw).normalized()
+		tracing.AddEvent(gw.Context, "gateway.stage",
+			attribute.String("stage", string(stage)),
+			attribute.String("handler", handler.Name()),
+			attribute.String("action", string(result.Action)),
+			attribute.Int64("latency_ms", time.Since(start).Milliseconds()),
+		)
 		switch result.Action {
 		case ActionContinue:
 			continue

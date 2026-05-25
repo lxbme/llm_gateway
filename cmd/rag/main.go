@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -13,6 +13,7 @@ import (
 	"llm_gateway/embedding"
 	embeddingGrpc "llm_gateway/embedding/grpc"
 	"llm_gateway/internal/discovery"
+	"llm_gateway/internal/logging"
 	"llm_gateway/internal/metrics"
 	"llm_gateway/internal/tracing"
 	"llm_gateway/rag"
@@ -29,6 +30,8 @@ import (
 const serviceName = "rag"
 
 func main() {
+	logging.Init(serviceName)
+
 	servePort := os.Getenv("SERVE_PORT")
 	if servePort == "" {
 		servePort = "50055"
@@ -36,7 +39,7 @@ func main() {
 
 	tracingShutdown, err := tracing.Init(context.Background(), serviceName)
 	if err != nil {
-		log.Printf("[Warn] tracing init failed: %v", err)
+		slog.Warn("tracing init failed", "err", err)
 	}
 	defer func() { _ = tracingShutdown(context.Background()) }()
 
@@ -51,36 +54,42 @@ func main() {
 
 	embeddingClient, err := embeddingGrpc.NewClient(embeddingGrpcAddress)
 	if err != nil {
-		log.Fatalf("[Error] Failed to create embedding client: %s", err)
+		slog.Error("embedding client init failed", "err", err)
+		os.Exit(1)
 	}
 	defer embeddingClient.Close()
 
 	embeddingInfo, err := probeEmbeddingWithBackoff(embeddingClient)
 	if err != nil {
-		log.Fatalf("[Error] embedding probe gave up: %v", err)
+		slog.Error("embedding probe gave up", "err", err)
+		os.Exit(1)
 	}
 
 	cfg, err := ragQdrant.LoadConfigFromEnv()
 	if err != nil {
-		log.Fatalf("[Error] Failed to load RAG config: %s", err)
+		slog.Error("load rag config failed", "err", err)
+		os.Exit(1)
 	}
 
 	store, err := ragQdrant.New(cfg, embeddingInfo.Dimensions)
 	if err != nil {
-		log.Fatalf("[Error] Failed to create RAG qdrant store: %s", err)
+		slog.Error("rag qdrant store init failed", "err", err)
+		os.Exit(1)
 	}
 
-	log.Printf("[Info] RAG config: topK=%d, threshold=%.4f", cfg.DefaultTopK, cfg.SimilarityThreshold)
+	slog.Info("rag config loaded", "top_k", cfg.DefaultTopK, "threshold", cfg.SimilarityThreshold)
 
 	ragSvc, err := rag.NewService(store, embeddingClient, int32(cfg.DefaultTopK), cfg.SimilarityThreshold)
 	if err != nil {
-		log.Fatalf("[Error] Failed to create RAG service: %s", err)
+		slog.Error("rag service init failed", "err", err)
+		os.Exit(1)
 	}
 	defer ragSvc.Close()
 
 	lis, err := net.Listen("tcp", ":"+servePort)
 	if err != nil {
-		log.Fatalf("[Error] Failed to listen on port %s: %s", servePort, err)
+		slog.Error("listen failed", "port", servePort, "err", err)
+		os.Exit(1)
 	}
 
 	s := grpc.NewServer(
@@ -98,29 +107,32 @@ func main() {
 
 	advertiseAddr, err := discovery.AdvertiseAddr(servePort)
 	if err != nil {
-		log.Fatalf("[Error] Failed to resolve advertise addr: %s", err)
+		slog.Error("resolve advertise addr failed", "err", err)
+		os.Exit(1)
 	}
 	registerCtx, registerCancel := context.WithCancel(context.Background())
 	defer registerCancel()
 	deregister, err := discovery.Register(registerCtx, serviceName, advertiseAddr)
 	if err != nil {
-		log.Fatalf("[Error] Failed to register with discovery: %s", err)
+		slog.Error("discovery register failed", "err", err)
+		os.Exit(1)
 	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-stop
-		fmt.Printf("[Info] RAG received signal %s, shutting down\n", sig)
+		slog.Info("shutdown signal received", "signal", sig.String())
 		healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 		healthSrv.SetServingStatus(serviceName, healthpb.HealthCheckResponse_NOT_SERVING)
 		deregister()
 		s.GracefulStop()
 	}()
 
-	fmt.Printf("[Info] RAG gRPC server listening on port %s, advertise=%s\n", servePort, advertiseAddr)
+	slog.Info("grpc server listening", "port", servePort, "advertise", advertiseAddr)
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("[Error] Failed to serve: %s", err)
+		slog.Error("serve failed", "err", err)
+		os.Exit(1)
 	}
 }
 
@@ -130,9 +142,9 @@ func startMetricsServer() {
 		port = "9090"
 	}
 	addr := ":" + port
-	log.Printf("[Info] Metrics endpoint at %s/metrics", addr)
+	slog.Info("metrics endpoint listening", "addr", addr)
 	if err := metrics.Serve(addr); err != nil {
-		log.Printf("[Error] Metrics server stopped: %v", err)
+		slog.Error("metrics server stopped", "err", err)
 	}
 }
 
@@ -151,12 +163,18 @@ func probeEmbeddingWithBackoff(c *embeddingGrpc.Client) (embedding.Info, error) 
 		info, err := c.Info(attemptCtx)
 		cancel()
 		if err == nil {
-			log.Printf("[Info] embedding probe ok (attempt %d): provider=%s model=%s dim=%d",
-				attempt, info.Provider, info.Model, info.Dimensions)
+			slog.Info("embedding probe ok",
+				"attempt", attempt,
+				"provider", info.Provider,
+				"model", info.Model,
+				"dim", info.Dimensions)
 			return info, nil
 		}
 		lastErr = err
-		log.Printf("[Warn] embedding probe attempt %d failed: %v; retry in %s", attempt, err, backoff)
+		slog.Warn("embedding probe failed",
+			"attempt", attempt,
+			"err", err,
+			"retry_in", backoff.String())
 		time.Sleep(backoff)
 		if backoff < 30*time.Second {
 			backoff *= 2

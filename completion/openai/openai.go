@@ -9,6 +9,7 @@ import (
 	"io"
 	"llm_gateway/completion"
 	"llm_gateway/internal/tracing"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -203,7 +204,13 @@ func (s *OpenaiCompletionService) buildUpstreamRequest(ctx context.Context, orig
 		return nil, fmt.Errorf("fail to marshal openai request: %w", err)
 	}
 
-	fmt.Printf("[Debug] Sending to OpenAI: %s\n", string(reqBodyBytes))
+	// Deliberately do NOT log the request body: it contains the user prompt
+	// and the OpenAI/closeai/deepseek conversation turn payload. Metadata
+	// (model + body size) is fine for debugging upstream call sizing.
+	slog.DebugContext(ctx, "upstream openai request built",
+		"model", openaiReq.Model,
+		"body_bytes", len(reqBodyBytes),
+	)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.endpoint, bytes.NewBuffer(reqBodyBytes))
 	if err != nil {

@@ -3,6 +3,7 @@ package rag
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"llm_gateway/embedding"
 
@@ -77,7 +78,7 @@ func (s *ServiceImpl) Ingest(ctx context.Context, chunks []Chunk) (string, int, 
 		}
 	}
 
-	fmt.Printf("[Info] Ingested %d chunks, doc_id=%s\n", len(chunks), docID)
+	slog.InfoContext(ctx, "rag chunks ingested", "chunks", len(chunks), "doc_id", docID)
 	return docID, len(chunks), nil
 }
 

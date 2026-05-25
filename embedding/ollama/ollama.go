@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -82,7 +83,7 @@ func New(cfg Config) (*Service, error) {
 		return nil, fmt.Errorf("ollama: declared dimensions=%d but model %s returned %d",
 			dimInt, cfg.Model, len(probe))
 	}
-	fmt.Printf("[Info] Ollama embedding ready: model=%s dim=%d\n", cfg.Model, dimInt)
+	slog.Info("ollama embedding ready", "model", cfg.Model, "dim", dimInt)
 
 	return s, nil
 }

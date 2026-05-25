@@ -3,7 +3,7 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -37,7 +37,8 @@ func AdvertiseAddr(fallbackPort string) (string, error) {
 // the fact and returns a deregister that does nothing.
 func Register(ctx context.Context, serviceName, advertiseAddr string) (func(), error) {
 	if !IsEnabled() {
-		log.Printf("[Info] discovery: ETCD_ENDPOINTS not set, skipping registration for %s", serviceName)
+		slog.InfoContext(ctx, "discovery skipped: ETCD_ENDPOINTS not set",
+			"target_service", serviceName)
 		return func() {}, nil
 	}
 	if advertiseAddr == "" {
@@ -82,27 +83,28 @@ func Register(ctx context.Context, serviceName, advertiseAddr string) (func(), e
 				return
 			case _, ok := <-keepAliveCh:
 				if !ok {
-					log.Printf("[Error] discovery: keepalive channel closed for %s", key)
+					slog.Error("discovery keepalive channel closed", "key", key)
 					return
 				}
 			}
 		}
 	}()
 
-	log.Printf("[Info] discovery: registered %s -> %s (lease=%d)", key, advertiseAddr, lease.ID)
+	slog.InfoContext(ctx, "discovery registered",
+		"key", key, "advertise", advertiseAddr, "lease", lease.ID)
 
 	deregister := func() {
 		// Use a fresh background context so deregister still works after the
 		// parent ctx is cancelled during shutdown.
 		bg := context.Background()
 		if err := mgr.DeleteEndpoint(bg, key); err != nil {
-			log.Printf("[Error] discovery: delete endpoint %s: %v", key, err)
+			slog.Error("discovery delete endpoint failed", "key", key, "err", err)
 		}
 		if _, err := c.Revoke(bg, lease.ID); err != nil {
-			log.Printf("[Error] discovery: revoke lease %d: %v", lease.ID, err)
+			slog.Error("discovery revoke lease failed", "lease", lease.ID, "err", err)
 		}
 		leaseCancel()
-		log.Printf("[Info] discovery: deregistered %s", key)
+		slog.Info("discovery deregistered", "key", key)
 	}
 
 	return deregister, nil

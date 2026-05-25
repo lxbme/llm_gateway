@@ -3,6 +3,7 @@ package redis_hnsw
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -30,7 +31,8 @@ func (s *Store) createOrVerifyIndex(ctx context.Context) error {
 		)
 	}
 
-	fmt.Printf("[Info] Reusing RediSearch index: %s (dimensions=%d)\n", s.config.IndexName, existingDim)
+	slog.InfoContext(ctx, "redis_hnsw index reused",
+		"index", s.config.IndexName, "dimensions", existingDim)
 	return nil
 }
 
@@ -57,14 +59,17 @@ func (s *Store) createIndex(ctx context.Context) error {
 
 	if err := s.client.Do(ctx, args...).Err(); err != nil {
 		if isIndexAlreadyExistsErr(err) {
-			fmt.Printf("[Info] RediSearch index %s already exists (created by peer), reusing\n", s.config.IndexName)
+			slog.InfoContext(ctx, "redis_hnsw index already exists, reusing",
+				"index", s.config.IndexName)
 			return nil
 		}
 		return fmt.Errorf("fail to create RediSearch index: %w", err)
 	}
 
-	fmt.Printf("[Info] Created RediSearch index: %s (dimensions=%d, metric=%s)\n",
-		s.config.IndexName, s.dimensions, s.config.DistanceMetric)
+	slog.InfoContext(ctx, "redis_hnsw index created",
+		"index", s.config.IndexName,
+		"dimensions", s.dimensions,
+		"metric", s.config.DistanceMetric)
 	return nil
 }
 

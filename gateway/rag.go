@@ -2,7 +2,13 @@ package gateway
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
+
+	"llm_gateway/internal/tracing"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // handleRAGRetrieveStage retrieves semantically relevant document chunks and
@@ -21,28 +27,52 @@ func handleRAGRetrieveStage(gw *GatewayContext) StageResult {
 		return StageResult{Action: ActionContinue}
 	}
 
+	// Span wraps the embedding + vector-DB query path. Not just an event,
+	// because internally RAG does two upstream calls (embedding gRPC then
+	// qdrant) and a child span makes the slower leg visible in Tempo.
+	ctx, span := tracing.Tracer("gateway").Start(gw.Context, "gateway.rag.retrieve")
+	defer span.End()
+
 	collection := gw.Request.Header.Get("X-RAG-Collection")
-	collectionSource := "X-RAG-Collection header"
+	// collection_source is a bounded enum (2 values) — safe attribute. The
+	// collection value itself can be a per-user identifier (token alias) so
+	// it is deliberately NOT recorded as a span attribute or log field.
+	collectionSourceAttr := "header"
 	if collection == "" {
 		collection = gw.Auth.Subject
-		collectionSource = "Auth.Subject (token alias)"
+		collectionSourceAttr = "token_alias"
 	}
 	if collection == "" {
-		logWarn("RAG: configured but no collection resolvable for this request (no X-RAG-Collection header, no token alias) — skipping retrieve")
+		span.SetAttributes(attribute.String("result", "skipped_no_collection"))
+		slog.WarnContext(gw.Context, "rag retrieve skipped: no collection resolvable")
 		return StageResult{Action: ActionContinue}
 	}
+	span.SetAttributes(attribute.String("collection_source", collectionSourceAttr))
 
-	logDebug("RAG: resolved collection=%q from %s", collection, collectionSource)
+	slog.DebugContext(gw.Context, "rag collection resolved", "source", collectionSourceAttr)
 
-	chunks, err := gw.Services.RAG.Retrieve(gw.Context, gw.Request.PromptText, collection, 0, 0)
+	chunks, err := gw.Services.RAG.Retrieve(ctx, gw.Request.PromptText, collection, 0, 0)
 	if err != nil {
-		logWarn("RAG retrieve failed (degrading gracefully) collection=%q: %s", collection, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "rag retrieve failed")
+		span.SetAttributes(attribute.String("result", "error"))
+		slog.WarnContext(gw.Context, "rag retrieve failed (degrading gracefully)",
+			"source", collectionSourceAttr, "err", err)
 		return StageResult{Action: ActionContinue}
 	}
 	if len(chunks) == 0 {
-		logDebug("RAG: retrieve returned 0 chunks for collection=%q — verify ingest used the same collection name", collection)
+		span.SetAttributes(
+			attribute.Int("chunks", 0),
+			attribute.String("result", "no_match"),
+		)
+		slog.DebugContext(gw.Context, "rag retrieve returned 0 chunks", "source", collectionSourceAttr)
 		return StageResult{Action: ActionContinue}
 	}
+
+	span.SetAttributes(
+		attribute.Int("chunks", len(chunks)),
+		attribute.String("result", "ok"),
+	)
 
 	// Inject retrieved context before the user prompt.
 	var sb strings.Builder
@@ -58,6 +88,6 @@ func handleRAGRetrieveStage(gw *GatewayContext) StageResult {
 	gw.Data["rag_chunks_count"] = len(chunks)
 	gw.Data["rag_collection"] = collection
 
-	logDebug("RAG: injected %d chunks from collection=%s", len(chunks), collection)
+	slog.DebugContext(gw.Context, "rag chunks injected", "chunks", len(chunks), "source", collectionSourceAttr)
 	return StageResult{Action: ActionContinue}
 }

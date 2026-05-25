@@ -3,6 +3,7 @@ package qdrant
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"llm_gateway/cache"
@@ -101,7 +102,7 @@ func (s *Store) Search(ctx context.Context, query cache.Query) (string, bool, er
 		return "", false, nil
 	}
 
-	fmt.Printf("[Info] Hit cache: %s\n", searchResult[0].Id.GetUuid())
+	slog.InfoContext(ctx, "qdrant cache hit", "point_id", searchResult[0].Id.GetUuid())
 	return answer.GetStringValue(), true, nil
 }
 
@@ -153,7 +154,7 @@ func (s *Store) createCollection() error {
 		if err != nil {
 			return fmt.Errorf("fail to create collection: %w", err)
 		}
-		fmt.Printf("[Info] Created Qdrant collection: %s\n", s.collectionName)
+		slog.Info("qdrant collection created", "collection", s.collectionName)
 		return nil
 	}
 
@@ -176,7 +177,8 @@ func (s *Store) createCollection() error {
 		)
 	}
 
-	fmt.Printf("[Info] Reusing Qdrant collection: %s (dimensions=%d)\n", s.collectionName, existingDimensions)
+	slog.Info("qdrant collection reused",
+		"collection", s.collectionName, "dimensions", existingDimensions)
 	return nil
 }
 

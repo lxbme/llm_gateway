@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	"llm_gateway/rag"
@@ -61,7 +62,7 @@ func (p *ingestWorkerPool) submit(task ingestTask) bool {
 	case p.taskChan <- task:
 		return true
 	default:
-		logWarn("ingest task queue full, dropping job %s", task.jobID)
+		slog.Warn("ingest queue full, dropping job", "job_id", task.jobID)
 		return false
 	}
 }
@@ -101,10 +102,10 @@ func (p *ingestWorkerPool) processTask(task ingestTask) {
 		if err != nil {
 			job.Status = ingestJobFailed
 			job.Err = err.Error()
-			logError("ingest worker: job %s failed: %s", task.jobID, err)
+			slog.Error("ingest job failed", "job_id", task.jobID, "err", err)
 		} else {
 			job.Status = ingestJobDone
-			logInfo("ingest worker: job %s done, %d chunks ingested", task.jobID, job.ChunkCount)
+			slog.Info("ingest job done", "job_id", task.jobID, "chunks", job.ChunkCount)
 		}
 	}
 	p.mu.Unlock()

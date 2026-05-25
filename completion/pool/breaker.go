@@ -2,7 +2,7 @@ package pool
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/sony/gobreaker"
@@ -75,7 +75,14 @@ func newBreaker(endpointName string, cfg BreakerConfig) (*gobreaker.CircuitBreak
 			return failures >= ratio
 		},
 		OnStateChange: func(name string, from, to gobreaker.State) {
-			log.Printf("[Info] pool: breaker %q %s -> %s", name, from, to)
+			// Async callback — no request ctx is reachable here, so the log
+			// record carries no trace_id. That's expected: state transitions
+			// happen outside any specific request.
+			slog.Info("breaker state transition",
+				"endpoint", name,
+				"from", from.String(),
+				"to", to.String(),
+			)
 		},
 	}
 	return gobreaker.NewCircuitBreaker(settings), nil

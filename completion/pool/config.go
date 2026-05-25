@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -50,7 +50,9 @@ func LoadConfigFromEnv() (Config, error) {
 	}
 
 	if legacy := strings.TrimSpace(os.Getenv(envLegacyEndpoint)); legacy != "" {
-		log.Printf("[Info] pool: %s/%s not set, falling back to legacy single-endpoint mode (COMPL_ENDPOINT)", envPoolConfigFile, envPoolConfig)
+		slog.Info("pool falling back to legacy single-endpoint mode",
+			"missing_envs", []string{envPoolConfigFile, envPoolConfig},
+			"using_env", envLegacyEndpoint)
 		cfg := Config{
 			Strategy:    defaultStrategy,
 			MaxAttempts: 1,

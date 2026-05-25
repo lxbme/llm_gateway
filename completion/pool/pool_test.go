@@ -8,6 +8,10 @@ import (
 	"testing"
 
 	"llm_gateway/completion"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 type fakeClient struct {
@@ -231,6 +235,114 @@ func TestPool_DuplicateNameRejected(t *testing.T) {
     }`)
 	if _, err := LoadConfigFromEnv(); err == nil {
 		t.Fatal("expected duplicate-name error")
+	}
+}
+
+// TestPool_RetryEvents_Fallover asserts the full P3 event timeline on the
+// request span when the pool fails over from a broken endpoint to a healthy
+// one: retry.attempt(x2) + endpoint.selected(x2) + endpoint.failed(x1) +
+// retry.succeeded(x1). This is the canonical "retry is visible" test —
+// matches the screenshot's P3 value statement: retry 路由可视化.
+func TestPool_RetryEvents_Fallover(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	a := &fakeClient{name: "a", queue: []fakeResult{{err: errors.New("upstream api returned status 503: bad gateway")}}}
+	b := &fakeClient{name: "b", queue: []fakeResult{{ch: makeChunkChan("ok")}}}
+
+	svc := &Service{
+		endpoints: []*Endpoint{
+			testEndpoint("a", 1, true, a),
+			testEndpoint("b", 1, true, b),
+		},
+		selector:    &orderedSelector{order: []string{"a", "b"}},
+		maxAttempts: 3,
+	}
+
+	ctx, span := tp.Tracer("test").Start(context.Background(), "root")
+	if _, err := svc.GetStream(ctx, &completion.CompletionRequest{Model: "m"}); err != nil {
+		t.Fatalf("GetStream: %v", err)
+	}
+	span.End()
+
+	// Find the root span we just ended (the pool also creates child
+	// completion.pool.select spans).
+	var root sdktrace.ReadOnlySpan
+	for _, s := range rec.Ended() {
+		if s.Name() == "root" {
+			root = s
+			break
+		}
+	}
+	if root == nil {
+		t.Fatal("root span not found in recorder")
+	}
+
+	counts := map[string]int{}
+	var failedClass, succeededEndpoint string
+	for _, e := range root.Events() {
+		counts[e.Name]++
+		if e.Name == "completion.endpoint.failed" {
+			for _, a := range e.Attributes {
+				if a.Key == "error_class" {
+					failedClass = a.Value.AsString()
+				}
+			}
+		}
+		if e.Name == "completion.retry.succeeded" {
+			for _, a := range e.Attributes {
+				if a.Key == "endpoint" {
+					succeededEndpoint = a.Value.AsString()
+				}
+			}
+		}
+	}
+
+	want := map[string]int{
+		"completion.retry.attempt":    2,
+		"completion.endpoint.selected": 2,
+		"completion.endpoint.failed":  1,
+		"completion.retry.succeeded":  1,
+	}
+	for k, v := range want {
+		if counts[k] != v {
+			t.Errorf("event %q: got %d, want %d (all events: %+v)", k, counts[k], v, counts)
+		}
+	}
+	if failedClass != "http_5xx" {
+		t.Errorf("failed event error_class=%q want http_5xx", failedClass)
+	}
+	if succeededEndpoint != "b" {
+		t.Errorf("succeeded event endpoint=%q want b", succeededEndpoint)
+	}
+}
+
+// TestErrorClass exercises the closed-enum mapping. Whenever new wrapped
+// error strings get added to the upstream call path, this test should be
+// extended in lock-step so we don't silently fall through to "other".
+func TestErrorClass(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{nil, "none"},
+		{context.DeadlineExceeded, "timeout"},
+		{context.Canceled, "canceled"},
+		{errors.New("upstream api returned status 503: foo"), "http_5xx"},
+		{errors.New("upstream api returned status 404: nope"), "http_4xx"},
+		{errors.New("fail to call upstream api: dial tcp: connection refused"), "network"},
+		{errors.New("fail to build upstream request: bad url"), "parse_error"},
+		{errors.New("unrelated"), "other"},
+	}
+	for _, c := range cases {
+		got := errorClass(c.err)
+		if got != c.want {
+			t.Errorf("errorClass(%v) = %q, want %q", c.err, got, c.want)
+		}
 	}
 }
 

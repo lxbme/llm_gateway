@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"llm_gateway/embedding"
@@ -77,7 +78,7 @@ func (s *SemanticService) start(workerCount int) {
 		s.wg.Add(1)
 		go s.worker(i)
 	}
-	fmt.Printf("[Info] Started %d semantic cache workers\n", workerCount)
+	slog.Info("semantic cache workers started", "count", workerCount)
 }
 
 func (s *SemanticService) worker(id int) {
@@ -86,16 +87,16 @@ func (s *SemanticService) worker(id int) {
 	for {
 		select {
 		case <-s.ctx.Done():
-			fmt.Printf("[Info] Worker %d shutting down...\n", id)
+			slog.Info("cache worker shutting down", "worker_id", id)
 			return
 		case task, ok := <-s.taskChan:
 			if !ok {
-				fmt.Printf("[Info] Worker %d: channel closed\n", id)
+				slog.Info("cache worker channel closed", "worker_id", id)
 				return
 			}
 
 			if err := s.processTask(task); err != nil {
-				fmt.Printf("[Error] Worker %d failed to process task: %s\n", id, err)
+				slog.Error("cache worker task failed", "worker_id", id, "err", err)
 			}
 		}
 	}
@@ -117,7 +118,13 @@ func (s *SemanticService) processTask(task Task) error {
 		return fmt.Errorf("failed to store semantic cache item: %w", err)
 	}
 
-	fmt.Printf("[Info] Successfully stored embedding for prompt: %.10s...\n", task.UserPrompt)
+	// Do NOT include any portion of task.UserPrompt or AIResponse — both can
+	// contain sensitive user data. Length is enough for sizing telemetry.
+	slog.Info("cache write ok",
+		"model", task.ModelName,
+		"prompt_chars", len(task.UserPrompt),
+		"answer_chars", len(task.AIResponse),
+	)
 	return nil
 }
 
@@ -126,7 +133,7 @@ func (s *SemanticService) submit(task Task) bool {
 	case s.taskChan <- task:
 		return true
 	default:
-		fmt.Printf("[Warning] Embedding task queue is full, dropping task.\n")
+		slog.Warn("cache embedding queue full, dropping task")
 		return false
 	}
 }

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"llm_gateway/completion"
@@ -22,7 +23,7 @@ func (s *Server) handleCompletionStats(w http.ResponseWriter, r *http.Request) {
 	snapshots, err := s.services.CompletionStats.PoolStats(r.Context())
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
-		logError("PoolStats failed: %s", err)
+		slog.ErrorContext(r.Context(), "pool stats failed", "err", err)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "PoolStats failed"})
 		return
 	}

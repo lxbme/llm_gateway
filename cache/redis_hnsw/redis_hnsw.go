@@ -3,6 +3,7 @@ package redis_hnsw
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -61,8 +62,8 @@ func New(cfg Config, dimensions int) (*Store, error) {
 	}
 
 	if cfg.DistanceMetric != "COSINE" {
-		fmt.Printf("[Warning] redis_hnsw: non-COSINE metric %s in use; SimilarityThreshold (%.4f) semantics differ from cosine — calibrate accordingly\n",
-			cfg.DistanceMetric, cfg.SimilarityThreshold)
+		slog.Warn("redis_hnsw non-COSINE metric in use; threshold semantics differ",
+			"metric", cfg.DistanceMetric, "threshold", cfg.SimilarityThreshold)
 	}
 
 	return s, nil
@@ -133,7 +134,7 @@ func (s *Store) Search(ctx context.Context, query cache.Query) (string, bool, er
 		return "", false, nil
 	}
 
-	fmt.Printf("[Info] Hit cache: %s\n", doc.ID)
+	slog.InfoContext(ctx, "redis_hnsw cache hit", "doc_id", doc.ID)
 	return answer, true, nil
 }
 
@@ -162,7 +163,7 @@ func (s *Store) Insert(ctx context.Context, item cache.Record) error {
 	if s.config.RecordTTLSeconds > 0 {
 		ttl := time.Duration(s.config.RecordTTLSeconds) * time.Second
 		if err := s.client.Expire(ctx, key, ttl).Err(); err != nil {
-			fmt.Printf("[Warning] failed to set TTL on %s: %s\n", key, err)
+			slog.WarnContext(ctx, "redis_hnsw set ttl failed", "key", key, "err", err)
 		}
 	}
 

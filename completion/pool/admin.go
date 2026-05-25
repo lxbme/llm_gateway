@@ -3,7 +3,7 @@ package pool
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 
 	"llm_gateway/completion"
@@ -29,7 +29,7 @@ func (s *Service) ListEndpoints(_ context.Context) ([]completion.EndpointView, e
 	return out, nil
 }
 
-func (s *Service) AddEndpoint(_ context.Context, spec completion.EndpointSpec) error {
+func (s *Service) AddEndpoint(ctx context.Context, spec completion.EndpointSpec) error {
 	ec := EndpointConfig{
 		Name:      spec.Name,
 		URL:       spec.URL,
@@ -61,11 +61,12 @@ func (s *Service) AddEndpoint(_ context.Context, spec completion.EndpointSpec) e
 		ep.Breaker = b
 	}
 	s.endpoints = append(append([]*Endpoint{}, s.endpoints...), ep)
-	log.Printf("[Info] pool: admin added endpoint %s (weight=%d enabled=%t)", ec.Name, ec.Weight, ec.Enabled)
+	slog.InfoContext(ctx, "pool admin added endpoint",
+		"endpoint", ec.Name, "weight", ec.Weight, "enabled", ec.Enabled)
 	return nil
 }
 
-func (s *Service) RemoveEndpoint(_ context.Context, name string) error {
+func (s *Service) RemoveEndpoint(ctx context.Context, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, ep := range s.endpoints {
@@ -74,25 +75,25 @@ func (s *Service) RemoveEndpoint(_ context.Context, name string) error {
 			next = append(next, s.endpoints[:i]...)
 			next = append(next, s.endpoints[i+1:]...)
 			s.endpoints = next
-			log.Printf("[Info] pool: admin removed endpoint %s", name)
+			slog.InfoContext(ctx, "pool admin removed endpoint", "endpoint", name)
 			return nil
 		}
 	}
 	return fmt.Errorf("pool: endpoint %q not found", name)
 }
 
-func (s *Service) Reweight(_ context.Context, name string, weight int) error {
+func (s *Service) Reweight(ctx context.Context, name string, weight int) error {
 	if weight <= 0 {
 		return fmt.Errorf("pool: weight must be > 0, got %d", weight)
 	}
-	return s.replaceCfg(name, func(cfg *EndpointConfig) { cfg.Weight = weight })
+	return s.replaceCfg(ctx, name, func(cfg *EndpointConfig) { cfg.Weight = weight })
 }
 
-func (s *Service) SetEnabled(_ context.Context, name string, enabled bool) error {
-	return s.replaceCfg(name, func(cfg *EndpointConfig) { cfg.Enabled = enabled })
+func (s *Service) SetEnabled(ctx context.Context, name string, enabled bool) error {
+	return s.replaceCfg(ctx, name, func(cfg *EndpointConfig) { cfg.Enabled = enabled })
 }
 
-func (s *Service) ResetBreaker(_ context.Context, name string) error {
+func (s *Service) ResetBreaker(ctx context.Context, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, ep := range s.endpoints {
@@ -113,7 +114,7 @@ func (s *Service) ResetBreaker(_ context.Context, name string) error {
 			next := append([]*Endpoint{}, s.endpoints...)
 			next[i] = replacement
 			s.endpoints = next
-			log.Printf("[Info] pool: admin reset breaker for %s", name)
+			slog.InfoContext(ctx, "pool admin reset breaker", "endpoint", name)
 			return nil
 		}
 	}
@@ -122,7 +123,7 @@ func (s *Service) ResetBreaker(_ context.Context, name string) error {
 
 // replaceCfg performs a copy-on-write replacement of one endpoint with a fresh Cfg.
 // Stats/Breaker pointers are preserved so counters and circuit state survive.
-func (s *Service) replaceCfg(name string, mutate func(*EndpointConfig)) error {
+func (s *Service) replaceCfg(ctx context.Context, name string, mutate func(*EndpointConfig)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, ep := range s.endpoints {
@@ -139,7 +140,8 @@ func (s *Service) replaceCfg(name string, mutate func(*EndpointConfig)) error {
 			next := append([]*Endpoint{}, s.endpoints...)
 			next[i] = replacement
 			s.endpoints = next
-			log.Printf("[Info] pool: admin updated endpoint %s (weight=%d enabled=%t)", newCfg.Name, newCfg.Weight, newCfg.Enabled)
+			slog.InfoContext(ctx, "pool admin updated endpoint",
+				"endpoint", newCfg.Name, "weight", newCfg.Weight, "enabled", newCfg.Enabled)
 			return nil
 		}
 	}

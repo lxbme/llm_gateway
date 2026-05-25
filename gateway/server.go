@@ -1,8 +1,10 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -44,7 +46,7 @@ func (s *Server) RegisterPublicRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) CompletionHandler(w http.ResponseWriter, r *http.Request) {
-	logDebug("Received request: %s %s", r.Method, r.URL.Path)
+	slog.DebugContext(r.Context(), "request received", "method", r.Method, "path", r.URL.Path)
 
 	gw := newGatewayContext(w, r, s.services)
 	defer s.finishGatewayRequest(gw)
@@ -56,7 +58,7 @@ func (s *Server) CompletionHandler(w http.ResponseWriter, r *http.Request) {
 
 	chunks, err := s.services.Completion.GetStream(gw.Context, gw.Upstream.Request)
 	if err != nil {
-		logError("Failed to get stream: %s", err)
+		slog.ErrorContext(gw.Context, "completion stream failed", "err", err)
 		gw.Upstream.Error = err
 		gw.Response.DirectResponse = newJSONDirectResponse(
 			http.StatusBadGateway,
@@ -166,7 +168,7 @@ func (s *Server) streamUpstreamResponse(gw *GatewayContext, chunks <-chan *compl
 	for chunk := range chunks {
 		select {
 		case <-gw.Context.Done():
-			logDebug("Client disconnected, stopping stream")
+			slog.DebugContext(gw.Context, "client disconnected, stopping stream")
 			gw.Upstream.Error = gw.Context.Err()
 			return gw.Context.Err()
 		default:
@@ -251,19 +253,20 @@ func (s *Server) streamUpstreamResponse(gw *GatewayContext, chunks <-chan *compl
 	return gw.Upstream.Error
 }
 
-func printDialog(userText string, answerText string) {
-	if currentLogLevel < LogLevelDebug {
-		return
-	}
+// auditDialog records metadata about a completed dialog turn. We deliberately
+// do NOT log the prompt or answer body — both can contain sensitive user data,
+// and the SENSITIVE_FIELD_RULES in internal/logging forbid it. If you need to
+// inspect actual prompts during local debugging, do it from the Tempo trace
+// view (where the body is only present on the request line, not span attrs)
+// or via a one-off `tcpdump` — not in persistent logs.
+func auditDialog(ctx context.Context, userText, answerText string) {
 	if strings.TrimSpace(userText) == "" && strings.TrimSpace(answerText) == "" {
 		return
 	}
-	if len(userText) > 100 {
-		fmt.Printf("user: ...%s\n", strings.ReplaceAll(strings.ReplaceAll(userText[len(userText)-100:], "\n", ""), " ", ""))
-	} else {
-		fmt.Printf("user: %s\n", userText)
-	}
-	fmt.Printf("ai: %.100s...\n", answerText)
+	slog.DebugContext(ctx, "dialog completed",
+		"prompt_chars", len(userText),
+		"answer_chars", len(answerText),
+	)
 }
 
 func returnCachedAnswer(w http.ResponseWriter, cachedAnswer string, model string) {

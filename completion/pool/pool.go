@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,8 +13,46 @@ import (
 	"llm_gateway/completion/openai"
 	"llm_gateway/internal/tracing"
 
+	"github.com/sony/gobreaker"
 	"go.opentelemetry.io/otel/attribute"
 )
+
+// errorClass maps an upstream/retry error into a small, closed enum suitable
+// for use as a span event attribute. Open-ended strings (raw err.Error()) are
+// cardinality-unsafe and may leak prompt fragments or upstream URLs — use
+// tracing.TruncateErr alongside this for the human-readable side.
+func errorClass(err error) string {
+	if err == nil {
+		return "none"
+	}
+	switch {
+	case errors.Is(err, gobreaker.ErrOpenState):
+		return "breaker_open"
+	case errors.Is(err, gobreaker.ErrTooManyRequests):
+		return "breaker_too_many"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	}
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "upstream api returned status 5"):
+		return "http_5xx"
+	case strings.Contains(s, "upstream api returned status 4"):
+		return "http_4xx"
+	case strings.Contains(s, "fail to call upstream api"),
+		strings.Contains(s, "connection refused"),
+		strings.Contains(s, "no such host"),
+		strings.Contains(s, "i/o timeout"):
+		return "network"
+	case strings.Contains(s, "fail to build upstream request"),
+		strings.Contains(s, "marshal"),
+		strings.Contains(s, "unmarshal"):
+		return "parse_error"
+	}
+	return "other"
+}
 
 type Service struct {
 	mu          sync.RWMutex
@@ -76,7 +115,11 @@ func newFromConfig(cfg Config, factory clientFactory) (*Service, error) {
 	for _, ep := range eps {
 		names = append(names, fmt.Sprintf("%s(w=%d,enabled=%t,breaker=%s)", ep.Cfg.Name, ep.Cfg.Weight, ep.Cfg.Enabled, breakerStateName(ep.Breaker)))
 	}
-	log.Printf("[Info] pool: strategy=%s max_attempts=%d endpoints=%v", sel.Name(), cfg.MaxAttempts, names)
+	slog.Info("pool initialized",
+		"strategy", sel.Name(),
+		"max_attempts", cfg.MaxAttempts,
+		"endpoints", names,
+	)
 
 	return &Service{
 		endpoints:   eps,
@@ -119,12 +162,33 @@ func (s *Service) snapshotEndpoints() []*Endpoint {
 	return out
 }
 
-func (s *Service) applyFilters(req *completion.CompletionRequest, candidates []*Endpoint) []*Endpoint {
+func (s *Service) applyFilters(ctx context.Context, req *completion.CompletionRequest, candidates []*Endpoint) []*Endpoint {
+	before := len(candidates)
+	byModel, byBreaker := 0, 0
 	for _, f := range s.filters {
+		prev := len(candidates)
 		candidates = f.Apply(req, candidates)
-		if len(candidates) == 0 {
-			return candidates
+		removed := prev - len(candidates)
+		// Per-filter removal accounting keeps the filtered event's attribute
+		// set fixed-cardinality (one counter per filter name). When a new
+		// filter is added, extend this switch + the event attrs together.
+		switch f.Name() {
+		case "model_affinity":
+			byModel += removed
+		case "breaker_open":
+			byBreaker += removed
 		}
+		if len(candidates) == 0 {
+			break
+		}
+	}
+	if before-len(candidates) > 0 {
+		tracing.AddEvent(ctx, "completion.endpoints.filtered",
+			attribute.Int("before", before),
+			attribute.Int("after", len(candidates)),
+			attribute.Int("by_model_affinity", byModel),
+			attribute.Int("by_breaker_open", byBreaker),
+		)
 	}
 	return candidates
 }
@@ -141,7 +205,14 @@ func (s *Service) GetStream(ctx context.Context, req *completion.CompletionReque
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		candidates := s.applyFilters(req, snapshot)
+		candidates := s.applyFilters(ctx, req, snapshot)
+
+		tracing.AddEvent(ctx, "completion.retry.attempt",
+			attribute.Int("attempt", attempt),
+			attribute.Int("candidates", len(candidates)),
+			attribute.Int("tried_count", len(tried)),
+			attribute.String("strategy", s.selector.Name()),
+		)
 
 		_, selectSpan := tracing.Tracer("completion.pool").Start(ctx, "completion.pool.select")
 		ep, ok := s.selector.Pick(req, candidates, tried)
@@ -156,6 +227,10 @@ func (s *Service) GetStream(ctx context.Context, req *completion.CompletionReque
 		selectSpan.End()
 
 		if !ok {
+			tracing.AddEvent(ctx, "completion.retry.no_eligible",
+				attribute.Int("attempts_used", attempt),
+				attribute.String("last_error_class", errorClass(lastErr)),
+			)
 			if lastErr != nil {
 				return nil, fmt.Errorf("pool: exhausted after %d attempt(s): %w", attempt, lastErr)
 			}
@@ -163,16 +238,39 @@ func (s *Service) GetStream(ctx context.Context, req *completion.CompletionReque
 		}
 		tried[ep.Cfg.Name] = struct{}{}
 
+		tracing.AddEvent(ctx, "completion.endpoint.selected",
+			attribute.String("endpoint", ep.Cfg.Name),
+			attribute.String("breaker_state", breakerStateName(ep.Breaker)),
+			attribute.Int("attempt", attempt),
+		)
+
 		started := ep.Stats.start()
 		ch, err := callEndpoint(ctx, ep, req)
 		if err == nil {
-			log.Printf("[Info] pool: served by %s (attempt %d)", ep.Cfg.Name, attempt+1)
+			tracing.AddEvent(ctx, "completion.retry.succeeded",
+				attribute.String("endpoint", ep.Cfg.Name),
+				attribute.Int("attempts_used", attempt+1),
+			)
+			slog.InfoContext(ctx, "pool served request",
+				"endpoint", ep.Cfg.Name, "attempt", attempt+1)
 			return wrapChannelForStats(ep, started, ch), nil
 		}
 		ep.Stats.end(started, true)
-		log.Printf("[Info] pool: %s pre-stream error: %v (attempt %d)", ep.Cfg.Name, err, attempt+1)
+		tracing.AddEvent(ctx, "completion.endpoint.failed",
+			attribute.String("endpoint", ep.Cfg.Name),
+			attribute.String("error_class", errorClass(err)),
+			attribute.String("error_msg", tracing.TruncateErr(err, 200)),
+			attribute.Int64("latency_ms", time.Since(started).Milliseconds()),
+			attribute.Int("attempt", attempt),
+		)
+		slog.InfoContext(ctx, "pool pre-stream error",
+			"endpoint", ep.Cfg.Name, "err", err, "attempt", attempt+1)
 		lastErr = err
 	}
+	tracing.AddEvent(ctx, "completion.retry.exhausted",
+		attribute.Int("attempts_used", s.maxAttempts),
+		attribute.String("last_error_class", errorClass(lastErr)),
+	)
 	if lastErr == nil {
 		lastErr = errors.New("unknown")
 	}
@@ -205,6 +303,16 @@ func callEndpoint(ctx context.Context, ep *Endpoint, req *completion.CompletionR
 		return ep.Client.GetStream(ctx, req)
 	})
 	if err != nil {
+		// Surface the synchronous breaker rejection paths as a distinct event.
+		// Async open->half_open->closed transitions are NOT traced here — they
+		// happen off the request path (gobreaker.OnStateChange).
+		if errors.Is(err, gobreaker.ErrOpenState) || errors.Is(err, gobreaker.ErrTooManyRequests) {
+			tracing.AddEvent(ctx, "completion.breaker.rejected",
+				attribute.String("endpoint", ep.Cfg.Name),
+				attribute.String("state", breakerStateName(ep.Breaker)),
+				attribute.String("reason", errorClass(err)),
+			)
+		}
 		return nil, err
 	}
 	ch, _ := res.(<-chan *completion.CompletionChunk)

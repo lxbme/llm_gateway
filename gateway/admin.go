@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -50,13 +51,16 @@ func (s *Server) handleRedisCreate(w http.ResponseWriter, r *http.Request) {
 	token, err := s.services.Auth.Create(r.Context(), alias)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		logError("Fail to create auth token: %w", err)
+		slog.ErrorContext(r.Context(), "auth token create failed", "err", err)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Fail to create auth token"})
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	logDebug("Created token: %s, alias: %s", token, alias)
+	// Never log the token itself — it is a bearer secret. Log only that a
+	// token was created and its length, which is enough to confirm shape
+	// in operational triage.
+	slog.DebugContext(r.Context(), "auth token created", "alias", alias, "token_len", len(token))
 	_ = json.NewEncoder(w).Encode(map[string]string{"token": token, "alias": alias})
 }
 
@@ -79,7 +83,7 @@ func (s *Server) handleRedisGet(w http.ResponseWriter, r *http.Request) {
 	valid, alias, err := s.services.Auth.Get(r.Context(), token)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		logError("Fail to query token from auth service: %w", err)
+		slog.ErrorContext(r.Context(), "auth token query failed", "err", err)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Fail to query token"})
 		return
 	}
@@ -106,7 +110,7 @@ func (s *Server) handleRedisDelete(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.services.Auth.Delete(r.Context(), token); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		logError("Fail to delete token from auth service: %s", err)
+		slog.ErrorContext(r.Context(), "auth token delete failed", "err", err)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Fail to delete token"})
 		return
 	}
@@ -175,7 +179,7 @@ func (s *Server) handleRAGIngest(w http.ResponseWriter, r *http.Request) {
 	docID, count, err := s.services.RAG.Ingest(r.Context(), ragChunks)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		logError("RAG ingest failed: %s", err)
+		slog.ErrorContext(r.Context(), "rag ingest failed", "err", err)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Ingest failed"})
 		return
 	}
@@ -321,7 +325,7 @@ func (s *Server) handleRAGDeleteDoc(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.services.RAG.DeleteDoc(r.Context(), req.DocID, req.Collection); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		logError("RAG delete doc failed: %s", err)
+		slog.ErrorContext(r.Context(), "rag delete doc failed", "err", err)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Delete failed"})
 		return
 	}
