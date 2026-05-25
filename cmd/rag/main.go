@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"llm_gateway/embedding"
 	embeddingGrpc "llm_gateway/embedding/grpc"
 	"llm_gateway/internal/discovery"
 	"llm_gateway/internal/metrics"
@@ -38,6 +40,10 @@ func main() {
 	}
 	defer func() { _ = tracingShutdown(context.Background()) }()
 
+	// Start metrics server first so Prometheus can observe this process even
+	// while the embedding probe is still retrying — mirrors cache-service.
+	go startMetricsServer()
+
 	embeddingGrpcAddress := os.Getenv("EMBED_ADDR")
 	if embeddingGrpcAddress == "" {
 		embeddingGrpcAddress = "localhost:50051"
@@ -49,16 +55,10 @@ func main() {
 	}
 	defer embeddingClient.Close()
 
-	log.Printf("[Info] Fetching embedding service info...")
-	embeddingInfo, err := embeddingClient.Info(context.Background())
+	embeddingInfo, err := probeEmbeddingWithBackoff(embeddingClient)
 	if err != nil {
-		log.Fatalf("[Error] Failed to get embedding service info: %s", err)
+		log.Fatalf("[Error] embedding probe gave up: %v", err)
 	}
-	log.Printf("[Info] Connected embedding service: provider=%s, model=%s, dimensions=%d",
-		embeddingInfo.Provider,
-		embeddingInfo.Model,
-		embeddingInfo.Dimensions,
-	)
 
 	cfg, err := ragQdrant.LoadConfigFromEnv()
 	if err != nil {
@@ -95,8 +95,6 @@ func main() {
 	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthSrv.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
 	metrics.GRPCServer.InitializeMetrics(s)
-
-	go startMetricsServer()
 
 	advertiseAddr, err := discovery.AdvertiseAddr(servePort)
 	if err != nil {
@@ -136,4 +134,33 @@ func startMetricsServer() {
 	if err := metrics.Serve(addr); err != nil {
 		log.Printf("[Error] Metrics server stopped: %v", err)
 	}
+}
+
+// probeEmbeddingWithBackoff calls Info() until it succeeds or the elapsed
+// budget is exhausted. Same shape and rationale as the cache-service version
+// — kept inline (instead of in internal/) because the helper is tiny and
+// only two services need it.
+func probeEmbeddingWithBackoff(c *embeddingGrpc.Client) (embedding.Info, error) {
+	const maxElapsed = 5 * time.Minute
+	const perAttempt = 5 * time.Second
+	backoff := time.Second
+	deadline := time.Now().Add(maxElapsed)
+	var lastErr error
+	for attempt := 1; time.Now().Before(deadline); attempt++ {
+		attemptCtx, cancel := context.WithTimeout(context.Background(), perAttempt)
+		info, err := c.Info(attemptCtx)
+		cancel()
+		if err == nil {
+			log.Printf("[Info] embedding probe ok (attempt %d): provider=%s model=%s dim=%d",
+				attempt, info.Provider, info.Model, info.Dimensions)
+			return info, nil
+		}
+		lastErr = err
+		log.Printf("[Warn] embedding probe attempt %d failed: %v; retry in %s", attempt, err, backoff)
+		time.Sleep(backoff)
+		if backoff < 30*time.Second {
+			backoff *= 2
+		}
+	}
+	return embedding.Info{}, fmt.Errorf("embedding probe gave up after %s: %w", maxElapsed, lastErr)
 }

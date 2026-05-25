@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"llm_gateway/cache"
 	"llm_gateway/cache/factory"
 	cachegrpc "llm_gateway/cache/grpc"
 	pb "llm_gateway/cache/proto"
+	"llm_gateway/embedding"
 	embeddingGrpc "llm_gateway/embedding/grpc"
 	"llm_gateway/internal/discovery"
 	"llm_gateway/internal/metrics"
@@ -38,6 +40,12 @@ func main() {
 	}
 	defer func() { _ = tracingShutdown(context.Background()) }()
 
+	// Start metrics server first so Prometheus can observe this process even
+	// while the (potentially slow) embedding probe is still retrying. Without
+	// this, a flapping embedding-service would cause cache-service to appear
+	// "down" in Prometheus indistinguishably from a real crash.
+	go startMetricsServer()
+
 	cfg, err := cache.LoadConfigFromEnv()
 	if err != nil {
 		log.Fatalf("Failed to load cache config: %v", err)
@@ -59,16 +67,10 @@ func main() {
 		}
 		defer embeddingClient.Close()
 
-		log.Printf("[Info] Fetching embedding service info...")
-		embeddingInfo, err := embeddingClient.Info(context.Background())
+		embeddingInfo, err := probeEmbeddingWithBackoff(embeddingClient)
 		if err != nil {
-			log.Fatalf("Failed to get embedding service info: %v", err)
+			log.Fatalf("[Error] embedding probe gave up: %v", err)
 		}
-		log.Printf("[Info] Connected embedding service: provider=%s, model=%s, dimensions=%d",
-			embeddingInfo.Provider,
-			embeddingInfo.Model,
-			embeddingInfo.Dimensions,
-		)
 
 		deps.Embedding = embeddingClient
 		deps.Dimensions = embeddingInfo.Dimensions
@@ -96,8 +98,6 @@ func main() {
 	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthSrv.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
 	metrics.GRPCServer.InitializeMetrics(s)
-
-	go startMetricsServer()
 
 	advertiseAddr, err := discovery.AdvertiseAddr(servePort)
 	if err != nil {
@@ -137,4 +137,35 @@ func startMetricsServer() {
 	if err := metrics.Serve(addr); err != nil {
 		log.Printf("[Error] Metrics server stopped: %v", err)
 	}
+}
+
+// probeEmbeddingWithBackoff calls Info() until it succeeds or the elapsed
+// budget is exhausted. Embedding-service may legitimately take dozens of
+// seconds to come up (model loading, ollama warmup), and during a brief
+// outage we want cache-service to wait it out rather than crash and lose
+// metrics. Each attempt has its own short ctx timeout so a hung dial does
+// not stall the whole budget.
+func probeEmbeddingWithBackoff(c *embeddingGrpc.Client) (embedding.Info, error) {
+	const maxElapsed = 5 * time.Minute
+	const perAttempt = 5 * time.Second
+	backoff := time.Second
+	deadline := time.Now().Add(maxElapsed)
+	var lastErr error
+	for attempt := 1; time.Now().Before(deadline); attempt++ {
+		attemptCtx, cancel := context.WithTimeout(context.Background(), perAttempt)
+		info, err := c.Info(attemptCtx)
+		cancel()
+		if err == nil {
+			log.Printf("[Info] embedding probe ok (attempt %d): provider=%s model=%s dim=%d",
+				attempt, info.Provider, info.Model, info.Dimensions)
+			return info, nil
+		}
+		lastErr = err
+		log.Printf("[Warn] embedding probe attempt %d failed: %v; retry in %s", attempt, err, backoff)
+		time.Sleep(backoff)
+		if backoff < 30*time.Second {
+			backoff *= 2
+		}
+	}
+	return embedding.Info{}, fmt.Errorf("embedding probe gave up after %s: %w", maxElapsed, lastErr)
 }
