@@ -11,6 +11,10 @@ import (
 	"strconv"
 
 	"llm_gateway/embedding"
+	"llm_gateway/internal/tracing"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Service implements embedding.Service using OpenAI API
@@ -72,7 +76,7 @@ func New(cfg Config) (*Service, error) {
 
 // Get implements embedding.Service
 func (s *Service) Get(ctx context.Context, question string) ([]float32, error) {
-	return s.getEmbedding(question)
+	return s.getEmbedding(ctx, question)
 }
 
 func (s *Service) Info(ctx context.Context) (embedding.Info, error) {
@@ -85,7 +89,10 @@ func (s *Service) Info(ctx context.Context) (embedding.Info, error) {
 }
 
 // getEmbedding gets embedding vector from OpenAI API
-func (s *Service) getEmbedding(input string) ([]float32, error) {
+func (s *Service) getEmbedding(ctx context.Context, input string) ([]float32, error) {
+	ctx, span := tracing.Tracer("embedding.openai").Start(ctx, "embedding.upstream.http")
+	defer span.End()
+
 	requestBody := EmbeddingRequest{
 		Model:          s.model,
 		Input:          input,
@@ -96,7 +103,7 @@ func (s *Service) getEmbedding(input string) ([]float32, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to marshal embedding request body: %w", err)
 	}
-	req, err := http.NewRequest("POST", s.endpoint, bytes.NewBuffer(requestBodyBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", s.endpoint, bytes.NewBuffer(requestBodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("fail to create embedding request: %w", err)
 	}
@@ -106,12 +113,16 @@ func (s *Service) getEmbedding(input string) ([]float32, error) {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "upstream call failed")
 		return nil, fmt.Errorf("fail to do embedding request: %w", err)
 	}
 	defer resp.Body.Close()
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 
 	body, err := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
+		span.SetStatus(codes.Error, fmt.Sprintf("upstream status %d", resp.StatusCode))
 		return nil, fmt.Errorf("embedding request fail: (%d) %s", resp.StatusCode, body)
 	}
 	if err != nil {

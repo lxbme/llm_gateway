@@ -8,9 +8,13 @@ import (
 	"fmt"
 	"io"
 	"llm_gateway/completion"
+	"llm_gateway/internal/tracing"
 	"net/http"
 	"os"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type OpenaiCompletionService struct {
@@ -33,16 +37,33 @@ func (s *OpenaiCompletionService) GetStream(ctx context.Context, req *completion
 		return nil, fmt.Errorf("fail to build upstream request: %w", err)
 	}
 
+	// upstream.http span covers only the HTTP request/response-header phase.
+	// We end it before the SSE goroutine starts so the trace timeline isn't
+	// distorted by a span that lasts for the whole stream (can be 30s+).
+	httpCtx, httpSpan := tracing.Tracer("completion.openai").Start(ctx, "completion.upstream.http")
+	upstreamReq = upstreamReq.WithContext(httpCtx)
 	resp, err := s.client.Do(upstreamReq)
 	if err != nil {
+		httpSpan.RecordError(err)
+		httpSpan.SetStatus(codes.Error, "upstream call failed")
+		httpSpan.End()
 		return nil, fmt.Errorf("fail to call upstream api: %w", err)
 	}
+	httpSpan.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 
 	if resp.StatusCode != http.StatusOK {
+		httpSpan.SetStatus(codes.Error, fmt.Sprintf("upstream status %d", resp.StatusCode))
+		httpSpan.End()
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		return nil, fmt.Errorf("upstream api returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
+	httpSpan.End()
+
+	// Time-to-first-byte span — measures latency from finishing the HTTP call
+	// to first SSE data line. Ends inside the goroutine on first chunk or on
+	// error/EOF (whichever comes first).
+	_, ttfbSpan := tracing.Tracer("completion.openai").Start(ctx, "completion.upstream.sse.first_byte")
 
 	ch := make(chan *completion.CompletionChunk, 10)
 
@@ -53,6 +74,18 @@ func (s *OpenaiCompletionService) GetStream(ctx context.Context, req *completion
 
 		reader := bufio.NewReader(resp.Body)
 		var totalTokens, promptTokens, completionTokens int
+		ttfbEnded := false
+		endTTFB := func(success bool) {
+			if ttfbEnded {
+				return
+			}
+			ttfbEnded = true
+			if !success {
+				ttfbSpan.SetStatus(codes.Error, "stream ended before first chunk")
+			}
+			ttfbSpan.End()
+		}
+		defer endTTFB(false)
 
 		for {
 			// Check if context is cancelled
@@ -120,6 +153,7 @@ func (s *OpenaiCompletionService) GetStream(ctx context.Context, req *completion
 			}
 
 			if content != "" {
+				endTTFB(true)
 				ch <- &completion.CompletionChunk{
 					Content:    content,
 					Error:      nil,

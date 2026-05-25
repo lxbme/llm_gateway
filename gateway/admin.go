@@ -47,7 +47,7 @@ func (s *Server) handleRedisCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := s.services.Auth.Create(alias)
+	token, err := s.services.Auth.Create(r.Context(), alias)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logError("Fail to create auth token: %w", err)
@@ -76,7 +76,7 @@ func (s *Server) handleRedisGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	valid, alias, err := s.services.Auth.Get(token)
+	valid, alias, err := s.services.Auth.Get(r.Context(), token)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logError("Fail to query token from auth service: %w", err)
@@ -104,7 +104,7 @@ func (s *Server) handleRedisDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.services.Auth.Delete(token); err != nil {
+	if err := s.services.Auth.Delete(r.Context(), token); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		logError("Fail to delete token from auth service: %s", err)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Fail to delete token"})

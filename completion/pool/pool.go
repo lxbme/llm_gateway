@@ -10,6 +10,9 @@ import (
 
 	"llm_gateway/completion"
 	"llm_gateway/completion/openai"
+	"llm_gateway/internal/tracing"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type Service struct {
@@ -139,7 +142,19 @@ func (s *Service) GetStream(ctx context.Context, req *completion.CompletionReque
 			return nil, err
 		}
 		candidates := s.applyFilters(req, snapshot)
+
+		_, selectSpan := tracing.Tracer("completion.pool").Start(ctx, "completion.pool.select")
 		ep, ok := s.selector.Pick(req, candidates, tried)
+		selectSpan.SetAttributes(
+			attribute.String("strategy", s.selector.Name()),
+			attribute.Int("attempt", attempt),
+			attribute.Int("candidates", len(candidates)),
+		)
+		if ok {
+			selectSpan.SetAttributes(attribute.String("endpoint", ep.Cfg.Name))
+		}
+		selectSpan.End()
+
 		if !ok {
 			if lastErr != nil {
 				return nil, fmt.Errorf("pool: exhausted after %d attempt(s): %w", attempt, lastErr)

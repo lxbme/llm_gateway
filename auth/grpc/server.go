@@ -19,7 +19,7 @@ func NewServer(authSerice auth.Service) *Server {
 }
 
 func (s *Server) Create(ctx context.Context, req *pb.CreateRequest) (*pb.CreateResponse, error) {
-	token, err := s.authService.Create(req.Alias)
+	token, err := s.authService.Create(ctx, req.Alias)
 	if err != nil {
 		return &pb.CreateResponse{Error: err.Error()}, nil
 	}
@@ -27,7 +27,7 @@ func (s *Server) Create(ctx context.Context, req *pb.CreateRequest) (*pb.CreateR
 }
 
 func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	valid, alias, err := s.authService.Get(req.Token)
+	valid, alias, err := s.authService.Get(ctx, req.Token)
 	if err != nil {
 		return &pb.GetResponse{Error: err.Error()}, nil
 	}
@@ -35,7 +35,7 @@ func (s *Server) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, 
 }
 
 func (s *Server) Delete(ctx context.Context, req *pb.DeleteRequest) (*pb.DeleteResponse, error) {
-	if err := s.authService.Delete(req.Token); err != nil {
+	if err := s.authService.Delete(ctx, req.Token); err != nil {
 		return &pb.DeleteResponse{Error: err.Error()}, nil
 	}
 	return &pb.DeleteResponse{}, nil

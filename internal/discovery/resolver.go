@@ -7,6 +7,7 @@ import (
 	"llm_gateway/internal/metrics"
 
 	etcdresolver "go.etcd.io/etcd/client/v3/naming/resolver"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/resolver"
@@ -52,6 +53,7 @@ func Dial(serviceName, fallbackAddr string, extraOpts ...grpc.DialOption) (*grpc
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(metrics.GRPCClient.UnaryClientInterceptor()),
 		grpc.WithChainStreamInterceptor(metrics.GRPCClient.StreamClientInterceptor()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	}, extraOpts...)
 
 	if !IsEnabled() {

@@ -27,8 +27,8 @@ func NewClient(address string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Create(alias string) (string, error) {
-	resp, err := c.client.Create(context.Background(), &pb.CreateRequest{Alias: alias})
+func (c *Client) Create(ctx context.Context, alias string) (string, error) {
+	resp, err := c.client.Create(ctx, &pb.CreateRequest{Alias: alias})
 	if err != nil {
 		return "", fmt.Errorf("auth service Create: %w", err)
 	}
@@ -38,8 +38,8 @@ func (c *Client) Create(alias string) (string, error) {
 	return resp.Token, nil
 }
 
-func (c *Client) Get(token string) (bool, string, error) {
-	resp, err := c.client.Get(context.Background(), &pb.GetRequest{Token: token})
+func (c *Client) Get(ctx context.Context, token string) (bool, string, error) {
+	resp, err := c.client.Get(ctx, &pb.GetRequest{Token: token})
 	if err != nil {
 		return false, "", fmt.Errorf("auth service Get: %w", err)
 	}
@@ -49,8 +49,8 @@ func (c *Client) Get(token string) (bool, string, error) {
 	return resp.Valid, resp.Alias, nil
 }
 
-func (c *Client) Delete(token string) error {
-	resp, err := c.client.Delete(context.Background(), &pb.DeleteRequest{Token: token})
+func (c *Client) Delete(ctx context.Context, token string) error {
+	resp, err := c.client.Delete(ctx, &pb.DeleteRequest{Token: token})
 	if err != nil {
 		return fmt.Errorf("auth service Delete: %w", err)
 	}

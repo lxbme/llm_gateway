@@ -8,6 +8,7 @@ import (
 	"llm_gateway/auth/redis"
 	"llm_gateway/internal/discovery"
 	"llm_gateway/internal/metrics"
+	"llm_gateway/internal/tracing"
 	"log"
 	"net"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -44,6 +46,12 @@ func main() {
 		servePort = "50054"
 	}
 
+	tracingShutdown, err := tracing.Init(context.Background(), serviceName)
+	if err != nil {
+		log.Printf("[Warn] tracing init failed: %v", err)
+	}
+	defer func() { _ = tracingShutdown(context.Background()) }()
+
 	authService, err := redis.NewRedisAuthService(redisAddr, password, db)
 	if err != nil {
 		log.Fatalf("Failed to create cache service: %v", err)
@@ -58,6 +66,7 @@ func main() {
 	s := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(metrics.GRPCServer.UnaryServerInterceptor()),
 		grpc.ChainStreamInterceptor(metrics.GRPCServer.StreamServerInterceptor()),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 	pb.RegisterAuthServiceServer(s, authgrpc.NewServer(authService))
 

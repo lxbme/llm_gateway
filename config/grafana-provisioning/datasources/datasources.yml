@@ -1,0 +1,25 @@
+# Grafana datasource auto-provisioning. Mounted at
+# /etc/grafana/provisioning/datasources/ inside the Grafana container by the
+# observability overlay, so both datasources show up the first time Grafana
+# starts — no manual UI setup needed.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      # Wire Tempo → Prometheus link so clicking a trace's span jumps to the
+      # matching service metrics in the same time window.
+      tracesToMetrics:
+        datasourceUid: prometheus

@@ -31,8 +31,7 @@ func NewRedisAuthService(addr, password string, db int) (*RedisAuthService, erro
 }
 
 // Create generates a new sk-xxx token for the given alias and stores it in Redis.
-func (s *RedisAuthService) Create(alias string) (token string, err error) {
-	ctx := context.Background()
+func (s *RedisAuthService) Create(ctx context.Context, alias string) (token string, err error) {
 	tokenString, err := GenerateToken(tokenPrefix, entropyLength)
 	if err != nil {
 		return "", fmt.Errorf("fail to create token: %w", err)
@@ -46,8 +45,7 @@ func (s *RedisAuthService) Create(alias string) (token string, err error) {
 }
 
 // Get validates the token format and looks up the alias in Redis.
-func (s *RedisAuthService) Get(token string) (valid bool, alias string, err error) {
-	ctx := context.Background()
+func (s *RedisAuthService) Get(ctx context.Context, token string) (valid bool, alias string, err error) {
 	if !CheckTokenFormat(tokenPrefix, entropyLength, token) {
 		return false, "", nil
 	}
@@ -64,8 +62,7 @@ func (s *RedisAuthService) Get(token string) (valid bool, alias string, err erro
 }
 
 // Delete removes the token from Redis.
-func (s *RedisAuthService) Delete(token string) error {
-	ctx := context.Background()
+func (s *RedisAuthService) Delete(ctx context.Context, token string) error {
 	if err := s.rdbClient.Del(ctx, keyPrefix+token).Err(); err != nil {
 		return fmt.Errorf("fail to delete token: %w", err)
 	}

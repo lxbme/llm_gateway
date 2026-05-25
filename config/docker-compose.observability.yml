@@ -1,4 +1,5 @@
-# Observability overlay — adds Prometheus + Grafana alongside the main stack.
+# Observability overlay — Prometheus + Grafana + OTel Collector + Tempo plus
+# OTLP env injection into every business service.
 #
 # Usage:
 #   docker compose \
@@ -6,15 +7,24 @@
 #     -f config/docker-compose.observability.yml \
 #     up
 #
-# All metrics ports (9090 inside each container) are reachable only inside the
-# ai-net network. Grafana is published to 127.0.0.1:3000 with anonymous viewer
-# auth (local-only). Prometheus UI is NOT published to the host by default — go
-# through Grafana, or temporarily add a `ports:` line if you need direct UI
-# access.
+# Or simply: `bash docker-run.sh --observe`.
 #
-# Per the project convention, this file does not modify any service in the main
-# docker-compose.yml. Each gRPC service already binds :9090 internally from its
-# own main.go (METRICS_PORT env), so no env injection is needed here.
+# What this overlay does
+# ----------------------
+# 1. Adds prometheus (metrics scrape), grafana (UI + auto-provisioned datasources),
+#    otel-collector (OTLP receiver) and tempo (trace backend) to the stack.
+# 2. Injects OTEL_EXPORTER_OTLP_ENDPOINT into every business service so that
+#    `internal/tracing.Init` actually sends spans. WITHOUT this overlay the
+#    services run with the OTLP endpoint env unset and tracing is a silent noop
+#    — that's the intended fallback for plain `docker-compose up`.
+#
+# Network exposure
+# ----------------
+# - Grafana published to 127.0.0.1:3000 (anonymous Viewer + admin password).
+# - Prometheus, otel-collector, tempo NOT published to host — Grafana proxies
+#   them through the ai-net network.
+# - Each gRPC service binds metrics on :9090 internally; reachable only via
+#   ai-net DNS (prometheus scrapes them by service name).
 
 services:
   prometheus:
@@ -35,12 +45,87 @@ services:
     container_name: llm_grafana
     ports:
       - "127.0.0.1:3000:3000"
+    volumes:
+      - ./config/grafana-provisioning/datasources:/etc/grafana/provisioning/datasources:ro
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
     depends_on:
       - prometheus
+      - tempo
     restart: unless-stopped
     networks:
       - ai-net
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.113.0
+    container_name: llm_otel_collector
+    volumes:
+      - ./config/otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      - tempo
+    restart: unless-stopped
+    networks:
+      - ai-net
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: llm_tempo
+    volumes:
+      - ./config/tempo.yml:/etc/tempo.yml:ro
+      - tempo-data:/var/tempo
+    command: ["-config.file=/etc/tempo.yml"]
+    restart: unless-stopped
+    networks:
+      - ai-net
+
+  # ---------------------------------------------------------------------------
+  # OTLP env injection — merged into the main compose's `environment` list.
+  # Docker Compose merges environment as a list of "KEY=VAL" strings; entries
+  # below are appended to whatever the main compose already declared.
+  # ---------------------------------------------------------------------------
+  gateway:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_SERVICE_VERSION=${OTEL_SERVICE_VERSION:-dev}
+      - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-local}
+      # Bind metrics on all container interfaces so Prometheus on ai-net can
+      # scrape `gateway:9090`. The default (127.0.0.1:9090) is only reachable
+      # inside the gateway container itself — fine for local non-docker runs
+      # but invisible from sibling containers.
+      - METRICS_ADDR=:9090
+
+  completion-service:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_SERVICE_VERSION=${OTEL_SERVICE_VERSION:-dev}
+      - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-local}
+
+  cache-service:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_SERVICE_VERSION=${OTEL_SERVICE_VERSION:-dev}
+      - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-local}
+
+  embedding-service:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_SERVICE_VERSION=${OTEL_SERVICE_VERSION:-dev}
+      - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-local}
+
+  auth-service:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_SERVICE_VERSION=${OTEL_SERVICE_VERSION:-dev}
+      - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-local}
+
+  rag-service:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_SERVICE_VERSION=${OTEL_SERVICE_VERSION:-dev}
+      - DEPLOYMENT_ENV=${DEPLOYMENT_ENV:-local}
+
+volumes:
+  tempo-data:

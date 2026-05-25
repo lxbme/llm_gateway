@@ -11,6 +11,9 @@ import (
 	"llm_gateway/cache"
 	"llm_gateway/completion"
 	"llm_gateway/internal/metrics"
+	"llm_gateway/internal/tracing"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func defaultGatewayPipeline() *Pipeline {
@@ -185,7 +188,7 @@ func handlePromptBuildStage(gw *GatewayContext) StageResult {
 }
 
 func handleAuthValidateStage(gw *GatewayContext) StageResult {
-	isValid, alias, err := gw.Services.Auth.Get(gw.Auth.BearerToken)
+	isValid, alias, err := gw.Services.Auth.Get(gw.Context, gw.Auth.BearerToken)
 	if err != nil {
 		logError("AuthCheckMiddleware: auth service error: %s", err)
 		gw.Response.DirectResponse = invalidAPIKeyResponse("Authentication service unavailable")
@@ -216,19 +219,25 @@ func handleMockResponseStage(gw *GatewayContext) StageResult {
 }
 
 func handleCacheLookupStage(gw *GatewayContext) StageResult {
+	ctx, span := tracing.Tracer("gateway").Start(gw.Context, "gateway.cache.lookup")
+	defer span.End()
+
 	start := time.Now()
-	cacheAnswer, isHit, err := gw.Services.Cache.Get(gw.Context, gw.Request.NormalizedKey, gw.Route.Model)
+	cacheAnswer, isHit, err := gw.Services.Cache.Get(ctx, gw.Request.NormalizedKey, gw.Route.Model)
 	metrics.CacheLookupLatencySec.Observe(time.Since(start).Seconds())
 	if err != nil {
 		metrics.CacheLookupTotal.WithLabelValues("error").Inc()
+		span.SetAttributes(attribute.String("cache.result", "error"))
 		logError("Failed to search similar vector in qdrant: %s", err)
 		return StageResult{Action: ActionContinue}
 	}
 	if !isHit {
 		metrics.CacheLookupTotal.WithLabelValues("miss").Inc()
+		span.SetAttributes(attribute.String("cache.result", "miss"))
 		return StageResult{Action: ActionContinue}
 	}
 	metrics.CacheLookupTotal.WithLabelValues("hit").Inc()
+	span.SetAttributes(attribute.String("cache.result", "hit"))
 
 	gw.Response.FromCache = true
 	gw.Response.DirectResponse = &DirectResponse{

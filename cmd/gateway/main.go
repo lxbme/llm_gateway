@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,13 +13,22 @@ import (
 	completionGrpc "llm_gateway/completion/grpc"
 	"llm_gateway/gateway"
 	"llm_gateway/internal/metrics"
+	"llm_gateway/internal/tracing"
 	ragGrpc "llm_gateway/rag/grpc"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const serverPort = 8080
 const adminPort = 8081
 
 func main() {
+	tracingShutdown, err := tracing.Init(context.Background(), "gateway")
+	if err != nil {
+		log.Printf("[Warn] tracing init failed: %v", err)
+	}
+	defer func() { _ = tracingShutdown(context.Background()) }()
+
 	cacheGrpcAddress := os.Getenv("CACHE_ADDR")
 	if cacheGrpcAddress == "" {
 		cacheGrpcAddress = "localhost:50052"
@@ -115,9 +125,14 @@ func main() {
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 	}
 
+	handler := otelhttp.NewHandler(gateway.WithMetricsMiddleware(mux), "gateway.http",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	)
 	httpServer := http.Server{
 		Addr:    fmt.Sprintf(":%d", serverPort),
-		Handler: gateway.WithMetricsMiddleware(mux),
+		Handler: handler,
 	}
 	log.Printf("[Info] Starting completion service at %d", serverPort)
 	err = httpServer.ListenAndServe()

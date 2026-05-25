@@ -11,6 +11,7 @@ import (
 
 	"llm_gateway/internal/metrics"
 
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
 )
 
@@ -47,6 +48,14 @@ func WithMetricsMiddleware(h http.Handler) http.Handler {
 // no high-cardinality risk. Add a whitelist here if new public paths land.
 func metricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Expose trace ID before the handler can flush headers (SSE handlers
+		// flush on first Write; once WriteHeader fires, further Header().Set
+		// is a no-op). otelhttp must have already run upstream so a valid
+		// span is on the context.
+		if sc := trace.SpanFromContext(r.Context()).SpanContext(); sc.IsValid() {
+			w.Header().Set("X-Trace-Id", sc.TraceID().String())
+		}
+
 		start := time.Now()
 		metrics.HTTPInFlight.Inc()
 		defer metrics.HTTPInFlight.Dec()

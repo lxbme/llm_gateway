@@ -12,6 +12,10 @@ import (
 	"time"
 
 	"llm_gateway/embedding"
+	"llm_gateway/internal/tracing"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Service implements embedding.Service using Ollama's /api/embed endpoint.
@@ -97,6 +101,9 @@ func (s *Service) Info(ctx context.Context) (embedding.Info, error) {
 }
 
 func (s *Service) fetchEmbedding(ctx context.Context, input string) ([]float32, error) {
+	ctx, span := tracing.Tracer("embedding.ollama").Start(ctx, "embedding.upstream.http")
+	defer span.End()
+
 	body, err := json.Marshal(EmbedRequest{Model: s.model, Input: input})
 	if err != nil {
 		return nil, fmt.Errorf("fail to marshal embedding request body: %w", err)
@@ -113,12 +120,16 @@ func (s *Service) fetchEmbedding(ctx context.Context, input string) ([]float32, 
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "upstream call failed")
 		return nil, fmt.Errorf("fail to do embedding request: %w", err)
 	}
 	defer resp.Body.Close()
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 
 	respBody, err := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
+		span.SetStatus(codes.Error, fmt.Sprintf("upstream status %d", resp.StatusCode))
 		return nil, fmt.Errorf("embedding request fail: (%d) %s", resp.StatusCode, respBody)
 	}
 	if err != nil {

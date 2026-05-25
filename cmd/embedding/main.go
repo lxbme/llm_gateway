@@ -14,9 +14,11 @@ import (
 	embeddinggrpc "llm_gateway/embedding/grpc"
 	"llm_gateway/internal/discovery"
 	"llm_gateway/internal/metrics"
+	"llm_gateway/internal/tracing"
 
 	pb "llm_gateway/embedding/proto"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -29,6 +31,12 @@ func main() {
 	if servePort == "" {
 		servePort = "50051"
 	}
+
+	tracingShutdown, err := tracing.Init(context.Background(), serviceName)
+	if err != nil {
+		log.Printf("[Warn] tracing init failed: %v", err)
+	}
+	defer func() { _ = tracingShutdown(context.Background()) }()
 
 	cfg, err := embedding.LoadConfigFromEnv()
 	if err != nil {
@@ -48,6 +56,7 @@ func main() {
 	s := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(metrics.GRPCServer.UnaryServerInterceptor()),
 		grpc.ChainStreamInterceptor(metrics.GRPCServer.StreamServerInterceptor()),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 	pb.RegisterEmbeddingServiceServer(s, embeddinggrpc.NewServer(svc))
 
