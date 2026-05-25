@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 
+	"llm_gateway/internal/metrics"
+
 	etcdresolver "go.etcd.io/etcd/client/v3/naming/resolver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -48,6 +50,8 @@ func ensureBuilder() error {
 func Dial(serviceName, fallbackAddr string, extraOpts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	opts := append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(metrics.GRPCClient.UnaryClientInterceptor()),
+		grpc.WithChainStreamInterceptor(metrics.GRPCClient.StreamClientInterceptor()),
 	}, extraOpts...)
 
 	if !IsEnabled() {

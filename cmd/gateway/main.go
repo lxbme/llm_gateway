@@ -11,6 +11,7 @@ import (
 	cacheGrpc "llm_gateway/cache/grpc"
 	completionGrpc "llm_gateway/completion/grpc"
 	"llm_gateway/gateway"
+	"llm_gateway/internal/metrics"
 	ragGrpc "llm_gateway/rag/grpc"
 )
 
@@ -94,6 +95,17 @@ func main() {
 		}
 	}()
 
+	go func() {
+		metricsAddr := os.Getenv("METRICS_ADDR")
+		if metricsAddr == "" {
+			metricsAddr = "127.0.0.1:9090"
+		}
+		log.Printf("[Info] Metrics endpoint at %s/metrics", metricsAddr)
+		if err := metrics.Serve(metricsAddr); err != nil {
+			log.Printf("[Error] Metrics server stopped: %v", err)
+		}
+	}()
+
 	if debugMode == "true" {
 		log.Printf("[Info] Debug mode on")
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -105,7 +117,7 @@ func main() {
 
 	httpServer := http.Server{
 		Addr:    fmt.Sprintf(":%d", serverPort),
-		Handler: mux,
+		Handler: gateway.WithMetricsMiddleware(mux),
 	}
 	log.Printf("[Info] Starting completion service at %d", serverPort)
 	err = httpServer.ListenAndServe()

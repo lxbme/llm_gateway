@@ -15,6 +15,7 @@ import (
 	pb "llm_gateway/cache/proto"
 	embeddingGrpc "llm_gateway/embedding/grpc"
 	"llm_gateway/internal/discovery"
+	"llm_gateway/internal/metrics"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -75,13 +76,19 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	s := grpc.NewServer()
+	s := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(metrics.GRPCServer.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(metrics.GRPCServer.StreamServerInterceptor()),
+	)
 	pb.RegisterCacheServiceServer(s, cachegrpc.NewServer(cacheSvc))
 
 	healthSrv := health.NewServer()
 	healthpb.RegisterHealthServer(s, healthSrv)
 	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthSrv.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
+	metrics.GRPCServer.InitializeMetrics(s)
+
+	go startMetricsServer()
 
 	advertiseAddr, err := discovery.AdvertiseAddr(servePort)
 	if err != nil {
@@ -108,5 +115,17 @@ func main() {
 	fmt.Printf("[Info] Cache gRPC server listening on port %s, advertise=%s\n", servePort, advertiseAddr)
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
+	}
+}
+
+func startMetricsServer() {
+	port := os.Getenv("METRICS_PORT")
+	if port == "" {
+		port = "9090"
+	}
+	addr := ":" + port
+	log.Printf("[Info] Metrics endpoint at %s/metrics", addr)
+	if err := metrics.Serve(addr); err != nil {
+		log.Printf("[Error] Metrics server stopped: %v", err)
 	}
 }

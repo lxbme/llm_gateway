@@ -5,10 +5,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"llm_gateway/auth/redis"
 	"llm_gateway/cache"
 	"llm_gateway/completion"
+	"llm_gateway/internal/metrics"
 )
 
 func defaultGatewayPipeline() *Pipeline {
@@ -214,14 +216,19 @@ func handleMockResponseStage(gw *GatewayContext) StageResult {
 }
 
 func handleCacheLookupStage(gw *GatewayContext) StageResult {
+	start := time.Now()
 	cacheAnswer, isHit, err := gw.Services.Cache.Get(gw.Context, gw.Request.NormalizedKey, gw.Route.Model)
+	metrics.CacheLookupLatencySec.Observe(time.Since(start).Seconds())
 	if err != nil {
+		metrics.CacheLookupTotal.WithLabelValues("error").Inc()
 		logError("Failed to search similar vector in qdrant: %s", err)
 		return StageResult{Action: ActionContinue}
 	}
 	if !isHit {
+		metrics.CacheLookupTotal.WithLabelValues("miss").Inc()
 		return StageResult{Action: ActionContinue}
 	}
+	metrics.CacheLookupTotal.WithLabelValues("hit").Inc()
 
 	gw.Response.FromCache = true
 	gw.Response.DirectResponse = &DirectResponse{

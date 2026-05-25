@@ -15,11 +15,14 @@
 #   bash docker-run.sh --prod           # use docker-compose.prod.yml (ghcr.io images)
 #   bash docker-run.sh --prod -d        # prod, detached
 #   bash docker-run.sh --prod --down    # tear down the prod stack
+#   bash docker-run.sh --observe        # add Prometheus + Grafana overlay
+#   bash docker-run.sh --observe -d     # observability stack, detached
 #   bash docker-run.sh --help           # show this help
 #
 # Recognized provider → overlay mappings:
-#   EMBED_PROVIDER=ollama         → config/docker-compose.ollama.yml
+#   EMBED_PROVIDER=ollama           → config/docker-compose.ollama.yml
 #   CACHE_STORE_PROVIDER=redis_hnsw → config/docker-compose.hnsw.yml
+#   --observe (CLI flag)            → config/docker-compose.observability.yml
 #
 # Any other value (e.g. EMBED_PROVIDER=openai, CACHE_STORE_PROVIDER=qdrant)
 # adds no overlay — those providers are handled entirely by the main compose.
@@ -40,6 +43,7 @@ DEV_COMPOSE_FILE="${ROOT_DIR}/docker-compose.yml"
 PROD_COMPOSE_FILE="${ROOT_DIR}/docker-compose.prod.yml"
 OLLAMA_OVERLAY="${ROOT_DIR}/config/docker-compose.ollama.yml"
 HNSW_OVERLAY="${ROOT_DIR}/config/docker-compose.hnsw.yml"
+OBSERVE_OVERLAY="${ROOT_DIR}/config/docker-compose.observability.yml"
 
 # ---------------------------------------------------------------------------
 # Arg parsing
@@ -48,6 +52,7 @@ HNSW_OVERLAY="${ROOT_DIR}/config/docker-compose.hnsw.yml"
 DETACH=0
 ACTION="up"
 PROD=0
+OBSERVE=0
 
 usage() {
   sed -n '2,/^set -euo pipefail$/p' "$0" | sed -e 's/^# \{0,1\}//' -e '/^set -euo/d'
@@ -58,6 +63,7 @@ while (( $# > 0 )); do
     -d)         DETACH=1; shift ;;
     --down)     ACTION="down"; shift ;;
     --prod)     PROD=1; shift ;;
+    --observe)  OBSERVE=1; shift ;;
     -h|--help)  usage; exit 0 ;;
     *)
       echo "Unknown argument: ${1}" >&2
@@ -161,6 +167,15 @@ if [[ "${CACHE_STORE_PROVIDER}" == "redis_hnsw" ]]; then
   OVERLAYS_USED+=("config/docker-compose.hnsw.yml")
 fi
 
+if (( OBSERVE )); then
+  if [[ ! -f "${OBSERVE_OVERLAY}" ]]; then
+    echo "[docker-run] --observe requested but overlay missing: ${OBSERVE_OVERLAY}" >&2
+    exit 1
+  fi
+  FILE_ARGS+=(-f "${OBSERVE_OVERLAY}")
+  OVERLAYS_USED+=("config/docker-compose.observability.yml")
+fi
+
 # ---------------------------------------------------------------------------
 # Compose action
 # ---------------------------------------------------------------------------
@@ -195,6 +210,7 @@ esac
 echo "[docker-run] Profile: ${COMPOSE_PROFILE_LABEL} (${COMPOSE_FILE})"
 echo "[docker-run] EMBED_PROVIDER=${EMBED_PROVIDER:-<unset>}"
 echo "[docker-run] CACHE_STORE_PROVIDER=${CACHE_STORE_PROVIDER:-<unset>}"
+echo "[docker-run] Observability: $( (( OBSERVE )) && echo on || echo off)"
 if (( ${#OVERLAYS_USED[@]} == 0 )); then
   echo "[docker-run] Overlays: (none — base compose only)"
 else

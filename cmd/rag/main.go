@@ -11,6 +11,7 @@ import (
 
 	embeddingGrpc "llm_gateway/embedding/grpc"
 	"llm_gateway/internal/discovery"
+	"llm_gateway/internal/metrics"
 	"llm_gateway/rag"
 	ragGrpc "llm_gateway/rag/grpc"
 	pb "llm_gateway/rag/proto"
@@ -74,13 +75,19 @@ func main() {
 		log.Fatalf("[Error] Failed to listen on port %s: %s", servePort, err)
 	}
 
-	s := grpc.NewServer()
+	s := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(metrics.GRPCServer.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(metrics.GRPCServer.StreamServerInterceptor()),
+	)
 	pb.RegisterRagServiceServer(s, ragGrpc.NewServer(ragSvc))
 
 	healthSrv := health.NewServer()
 	healthpb.RegisterHealthServer(s, healthSrv)
 	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthSrv.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
+	metrics.GRPCServer.InitializeMetrics(s)
+
+	go startMetricsServer()
 
 	advertiseAddr, err := discovery.AdvertiseAddr(servePort)
 	if err != nil {
@@ -107,5 +114,17 @@ func main() {
 	fmt.Printf("[Info] RAG gRPC server listening on port %s, advertise=%s\n", servePort, advertiseAddr)
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("[Error] Failed to serve: %s", err)
+	}
+}
+
+func startMetricsServer() {
+	port := os.Getenv("METRICS_PORT")
+	if port == "" {
+		port = "9090"
+	}
+	addr := ":" + port
+	log.Printf("[Info] Metrics endpoint at %s/metrics", addr)
+	if err := metrics.Serve(addr); err != nil {
+		log.Printf("[Error] Metrics server stopped: %v", err)
 	}
 }

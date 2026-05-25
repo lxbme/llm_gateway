@@ -1,0 +1,46 @@
+# Observability overlay — adds Prometheus + Grafana alongside the main stack.
+#
+# Usage:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f config/docker-compose.observability.yml \
+#     up
+#
+# All metrics ports (9090 inside each container) are reachable only inside the
+# ai-net network. Grafana is published to 127.0.0.1:3000 with anonymous viewer
+# auth (local-only). Prometheus UI is NOT published to the host by default — go
+# through Grafana, or temporarily add a `ports:` line if you need direct UI
+# access.
+#
+# Per the project convention, this file does not modify any service in the main
+# docker-compose.yml. Each gRPC service already binds :9090 internally from its
+# own main.go (METRICS_PORT env), so no env injection is needed here.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: llm_prometheus
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - ai-net
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: llm_grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - ai-net

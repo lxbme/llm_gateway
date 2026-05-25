@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: llm-gateway-local
+
+scrape_configs:
+  - job_name: gateway
+    static_configs:
+      - targets: ["gateway:9090"]
+        labels:
+          service: gateway
+
+  - job_name: completion
+    static_configs:
+      - targets: ["completion-service:9090"]
+        labels:
+          service: completion
+
+  - job_name: cache
+    static_configs:
+      - targets: ["cache-service:9090"]
+        labels:
+          service: cache
+
+  - job_name: embedding
+    static_configs:
+      - targets: ["embedding-service:9090"]
+        labels:
+          service: embedding
+
+  - job_name: auth
+    static_configs:
+      - targets: ["auth-service:9090"]
+        labels:
+          service: auth
+
+  - job_name: rag
+    static_configs:
+      - targets: ["rag-service:9090"]
+        labels:
+          service: rag

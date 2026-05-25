@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
+
+	"llm_gateway/internal/metrics"
 
 	"golang.org/x/time/rate"
 )
@@ -29,6 +33,62 @@ func chain(h http.Handler, middlewares ...Middleware) http.Handler {
 		h = middlewares[i](h)
 	}
 	return h
+}
+
+// WithMetricsMiddleware wraps h with the Prometheus instrumentation middleware.
+// Exported so cmd/gateway/main.go can apply it without touching the private chain helper.
+func WithMetricsMiddleware(h http.Handler) http.Handler {
+	return metricsMiddleware(h)
+}
+
+// metricsMiddleware records HTTPInFlight, HTTPRequestsTotal, HTTPDurationSec
+// for every public HTTP request. It uses r.URL.Path verbatim as the `path`
+// label — today the gateway only registers /v1/chat/completions, so there is
+// no high-cardinality risk. Add a whitelist here if new public paths land.
+func metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		metrics.HTTPInFlight.Inc()
+		defer metrics.HTTPInFlight.Dec()
+
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		defer func() {
+			path := r.URL.Path
+			metrics.HTTPRequestsTotal.WithLabelValues(path, strconv.Itoa(rec.status)).Inc()
+			metrics.HTTPDurationSec.WithLabelValues(path).Observe(time.Since(start).Seconds())
+		}()
+		next.ServeHTTP(rec, r)
+	})
+}
+
+// statusRecorder wraps ResponseWriter so the middleware can read back the
+// status code after the handler returns. http.Flusher is forwarded explicitly
+// because gateway handlers stream SSE responses.
+type statusRecorder struct {
+	http.ResponseWriter
+	status      int
+	wroteStatus bool
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	if !s.wroteStatus {
+		s.status = code
+		s.wroteStatus = true
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	if !s.wroteStatus {
+		s.wroteStatus = true
+	}
+	return s.ResponseWriter.Write(b)
+}
+
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func adminCheckMiddleware(next http.Handler) http.Handler {
