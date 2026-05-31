@@ -1,0 +1,21 @@
+# Grafana dashboard auto-provisioning. Mounted at
+# /etc/grafana/provisioning/dashboards/ inside the Grafana container by the
+# observability overlay, so the prebuilt JSON dashboards in this same dir
+# show up under the "LLM Gateway" folder the first time Grafana starts.
+#
+# allowUiUpdates: false enforces true read-only — UI edits won't survive a
+# restart. To change a dashboard, edit the JSON file here and re-deploy.
+
+apiVersion: 1
+
+providers:
+  - name: llm-gateway-dashboards
+    orgId: 1
+    folder: LLM Gateway
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

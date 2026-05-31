@@ -96,6 +96,30 @@ curl -s http://localhost:8080/v1/chat/completions \
      }'
 ```
 
+### 5. (Optional) Observability stack
+
+Bring everything up with Prometheus + Tempo + Grafana attached, plus OTLP
+tracing wired into every service:
+
+```sh
+bash docker-run.sh --observe -d
+```
+
+Then open [http://127.0.0.1:3000](http://127.0.0.1:3000) (anonymous read-only;
+`admin` / `admin` for write access). Three dashboards are auto-provisioned
+under **Dashboards → LLM Gateway**:
+
+- **Service Health** — request rate, error rate, p50/p95/p99 latency, gRPC
+  per-method tails, goroutines, memory — covering all six services.
+- **Completion Pool & Retry** — per-endpoint breaker state timeline, traffic
+  share, EWMA latency, in-flight concurrency.
+- **Cache & Gateway Stages** — semantic cache hit ratio, lookup p95, route
+  latency heatmap, gateway → downstream gRPC tails.
+
+Traces are queryable in **Explore → Tempo**; the response header `X-Trace-Id`
+on `/v1/chat/completions` lets you jump straight to the trace for any
+request, and span → metrics navigation is wired through Grafana.
+
 ## Example configs
 
 All example configs live in [`config/`](config/) — copy them out and adapt:

@@ -1,0 +1,165 @@
+{
+  "uid": "llm-pool",
+  "title": "Completion Pool & Retry",
+  "description": "Per-endpoint health of the completion-service upstream pool — circuit breaker state, traffic distribution, EWMA latency, in-flight concurrency. Retry-by-attempt timeline lives on traces (see Tempo, span event completion.retry.attempt) — not graphed here because the pool emits it as a span event, not a counter.",
+  "tags": ["llm-gateway", "p5"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "refresh": "30s",
+  "annotations": { "list": [] },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 3 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Pool dashboard** — completion-service upstream pool health. Endpoint names come from `pool_config.json`.\n\n**Deferred panels** (waiting on metric wiring, not provisioned here):\n- Retry-by-attempt timeline — `completion.retry.attempt` is currently a span event only. To graph it, either add a `completion_retry_attempt_total{endpoint,attempt}` counter or use Tempo metrics-generator.\n- Pre-stream vs mid-stream upstream errors — `gateway_upstream_stream_errors_total{kind}` is declared in `internal/metrics/metrics.go` but not yet incremented at the call sites."
+      }
+    },
+    {
+      "id": 2,
+      "type": "state-timeline",
+      "title": "Breaker state per endpoint",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 3, "w": 24, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "completion_pool_breaker_state",
+          "legendFormat": "{{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 70, "lineWidth": 0 },
+          "mappings": [
+            { "type": "value", "options": { "-1": { "text": "disabled", "color": "grey", "index": 0 } } },
+            { "type": "value", "options": { "0":  { "text": "closed",   "color": "green", "index": 1 } } },
+            { "type": "value", "options": { "1":  { "text": "half_open","color": "orange","index": 2 } } },
+            { "type": "value", "options": { "2":  { "text": "open",     "color": "red",   "index": 3 } } }
+          ],
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "grey",   "value": null },
+              { "color": "green",  "value": 0 },
+              { "color": "orange", "value": 1 },
+              { "color": "red",    "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "alignValue": "left",
+        "rowHeight": 0.9,
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Endpoint completed-request rate (stacked)",
+      "description": "Sum of success + failure per endpoint — proxy for selection share, since the pool does not emit a native selection counter.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 9, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (endpoint) (rate(completion_pool_success_total[$__rate_interval]) + rate(completion_pool_failure_total[$__rate_interval]))",
+          "legendFormat": "{{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 30, "stacking": { "mode": "normal", "group": "A" } }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Endpoint failure rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 9, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (endpoint) (rate(completion_pool_failure_total[$__rate_interval]))",
+          "legendFormat": "{{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Endpoint EWMA latency",
+      "description": "Selector input — drives weighted endpoint choice. Spikes here cause the selector to deprioritize the endpoint.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "completion_pool_ewma_latency_ms",
+          "legendFormat": "{{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 } },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Endpoint in-flight requests",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "completion_pool_in_flight",
+          "legendFormat": "{{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    }
+  ]
+}
